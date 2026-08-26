@@ -1559,26 +1559,6 @@ dl.method dd {
     gap: 3px;
 }
 
-.chan .bar {
-    display: block;
-    height: 3px;
-    border-radius: 2px;
-    background: var(--cream-08);
-    overflow: hidden;
-}
-
-.chan .bar span {
-    display: block;
-    height: 100%;
-    border-radius: 2px;
-    background: currentColor;
-    opacity: 0.55;
-}
-
-.chan[data-on="1"] .bar span {
-    opacity: 1;
-}
-
 .chan .metric {
     flex: none;
     display: grid;

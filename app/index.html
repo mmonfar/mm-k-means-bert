@@ -609,8 +609,9 @@
             b.style.color = c.color;
             // "Cohesion" is jargon on first read, so the number carries its own
             // explanation rather than assuming the reader knows the term.
-            // The right-hand third of the row was empty, so the measured numbers
-            // live there: share of the register as a bar, cohesion as a figure.
+            // The right-hand third of the row was empty, so cohesion lives there.
+            // The share is a number in the sub-line; a bar alongside it would be
+            // the same fact drawn twice, for two more rows of height.
             const share = Math.round((c.size / n) * 100);
             const coh = c.cohesion == null ? null : c.cohesion;
             b.innerHTML =
@@ -618,7 +619,6 @@
                 '<span class="lab">' +
                 '<span class="nm">' + c.label + '</span>' +
                 '<span class="sub">' + c.size + ' cases · ' + share + '%</span>' +
-                '<span class="bar"><span style="width:' + share + '%"></span></span>' +
                 '</span>' +
                 (coh === null ? '' :
                     '<span class="metric"><span class="mv">' + coh.toFixed(2) + '</span>' +
