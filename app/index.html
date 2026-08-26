@@ -1296,13 +1296,26 @@
             balloon.hidden = false;
             const r = host.getBoundingClientRect();
             const b = balloon.getBoundingClientRect();
-            let left = r.left + r.width / 2 - b.width / 2;
-            left = Math.max(10, Math.min(left, innerWidth - b.width - 10));
-            // Prefer above; flip below when there is not room.
-            let top = r.top - b.height - 10;
-            if (top < 10) top = r.bottom + 10;
-            balloon.style.left = left + 'px';
-            balloon.style.top = top + 'px';
+            const M = 10;
+            let left, top;
+
+            // Explainers in the rail open to the SIDE. Opening downward drops the
+            // balloon over the list it is describing and, in a narrow column,
+            // pushes it off the bottom; beside the icon there is always room.
+            if (host.closest('.rail')) {
+                left = r.right + M;
+                if (left + b.width > innerWidth - M) left = r.left - b.width - M;
+                top = r.top + r.height / 2 - b.height / 2;
+            } else {
+                left = r.left + r.width / 2 - b.width / 2;
+                top = r.top - b.height - M;          // prefer above
+                if (top < M) top = r.bottom + M;     // flip below
+            }
+
+            balloon.style.left =
+                Math.max(M, Math.min(left, innerWidth - b.width - M)) + 'px';
+            balloon.style.top =
+                Math.max(M, Math.min(top, innerHeight - b.height - M)) + 'px';
         }
 
         function hideBalloon() { balloon.hidden = true; }

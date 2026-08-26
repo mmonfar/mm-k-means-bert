@@ -96,13 +96,27 @@ body {
     flex: none;
 }
 
+/* The strapline is the brand's SUBTITLE role — the same slot "Clinical Systems
+   Architect" occupies in the outro — so it stays JetBrains Mono uppercase. A
+   third typeface would break a two-face system for no gain.
+
+   What was off was the tracking, not the face: --track-mono-ui (0.08em) is the
+   value for dense UI labels and reads cramped directly beside the wordmark,
+   while the outro's --track-mono (0.28em) is too wide to be legible at 11px.
+   This sits between the two, which is where a strapline belongs.
+
+   To try it in the display face instead, swap the three properties marked below
+   for: font-family: var(--fw); text-transform: none; letter-spacing: -0.01em. */
 .bar h1 {
     margin: 0;
     font-family: var(--fm), monospace;
+    /* ^ face */
     font-weight: 500;
     font-size: var(--fs-micro);
-    letter-spacing: var(--track-mono-ui);
+    letter-spacing: 0.16em;
+    /* ^ tracking */
     text-transform: uppercase;
+    /* ^ case */
     color: var(--ink-60);
     white-space: nowrap;
     overflow: hidden;
