@@ -1,0 +1,40 @@
+# ---- Environments ----
+venv/
+.venv/
+env/
+.env
+.env.*
+
+# ---- Python bytecode / caches ----
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- OS noise ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Localized / real clinical datasets (NEVER commit PHI) ----
+# Everything tabular is ignored by default; the explicit template mock is
+# re-admitted below. Trailing comments are illegal in .gitignore, so the
+# negation lives on its own bare line.
+input_mm_data.xlsx
+*.xlsx
+*.xls
+*.csv
+~$*.xlsx
+
+# Explicit template mock — synthetic, safe to track.
+!mock_mm_minutes.xlsx
+
+# ---- Model + build caches ----
+.cache/
+models/
+*.log
+
+# ---- Generated marketing frames (the compiled GIF is tracked) ----
+marketing/frames/

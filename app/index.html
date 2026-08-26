@@ -1,0 +1,3539 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>mmonfar. // Semantic M&amp;M Failure Navigation Engine</title>
+    <meta name="description"
+        content="Mortality &amp; Morbidity meeting minutes mapped into a navigable 3D semantic galaxy.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;800&family=JetBrains+Mono:wght@500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="assets/styles.css">
+</head>
+
+<body>
+
+    <canvas id="stage"></canvas>
+    <div id="vignette"></div>
+
+    <header id="brand">
+        <div class="wordmark">mmonfar<span class="dot">.</span></div>
+        <div class="rule"></div>
+        <div class="eyebrow">Semantic M&amp;M Failure Navigation</div>
+    </header>
+
+    <nav id="legend" class="panel" aria-label="Failure galaxies">
+        <h2>Failure Galaxies</h2>
+        <div id="legend-items"></div>
+
+        <div id="geometry">
+            <h2>Geometry</h2>
+            <div class="seg" role="radiogroup" aria-label="Coordinate geometry">
+                <button type="button" id="geo-amp" class="seg-btn is-on" role="radio"
+                    aria-checked="true">Amplified</button>
+                <button type="button" id="geo-true" class="seg-btn" role="radio"
+                    aria-checked="false">True</button>
+            </div>
+            <p class="caveat" id="geo-caveat"></p>
+        </div>
+    </nav>
+
+    <article id="case" class="panel" aria-live="polite">
+        <div class="case-head">
+            <span class="case-id" id="case-id">—</span>
+            <span class="case-date" id="case-date"></span>
+        </div>
+        <div class="case-cluster" id="case-cluster"></div>
+        <p class="case-summary" id="case-summary"></p>
+        <dl class="case-meta">
+            <dt>Dept</dt>
+            <dd id="case-dept"></dd>
+            <dt>Severity</dt>
+            <dd><span class="sev" id="case-sev"></span></dd>
+            <dt>Coords</dt>
+            <dd id="case-xyz"></dd>
+        </dl>
+
+        <!-- Measured semantic distance, computed in the full 384-d space before any
+             projection — the number that the on-screen geometry cannot distort. -->
+        <section id="neighbours">
+            <h2>Closest cases · measured</h2>
+            <ul id="nn-list"></ul>
+            <p class="caveat">Cosine similarity in 384-d embedding space. Unaffected by
+                the projection or by the amplified spacing.</p>
+        </section>
+
+        <div class="pin-note" id="case-pin"></div>
+    </article>
+
+    <div id="stats" class="panel">
+        <div><span class="stat-n" id="stat-cases">—</span><span class="stat-k">Cases</span></div>
+        <div><span class="stat-n" id="stat-clusters">—</span><span class="stat-k">Galaxies</span></div>
+        <div><span class="stat-n" id="stat-dims">384</span><span class="stat-k">Dimensions</span></div>
+        <div><span class="stat-n" id="stat-proj">—</span><span class="stat-k">Projection</span></div>
+        <div><span class="stat-n" id="stat-var">—</span><span class="stat-k">Variance kept</span></div>
+    </div>
+
+    <div id="hint" class="panel">
+        <b>drag</b> orbit &nbsp;·&nbsp; <b>scroll</b> zoom<br>
+        <b>hover</b> preview &nbsp;·&nbsp; <b>click</b> pin<br>
+        <b>legend</b> isolate &nbsp;·&nbsp; <b>R</b> reset view
+    </div>
+
+    <div id="loader">Building semantic galaxy…</div>
+
+    <!-- Screen-reader / Ctrl-F reachable copy of the payload -->
+    <ul id="a11y-list" class="sr-only" aria-label="All cases as text"></ul>
+
+    <!-- engine.py rewrites everything between these two markers -->
+    <!-- MM_PAYLOAD_START -->
+    <script id="mm-payload" type="application/json">
+{
+ "meta": {
+  "brand": "mmonfar.",
+  "title": "Semantic M&M Failure Navigation Engine",
+  "source_file": "mock_mm_minutes.xlsx",
+  "model": "all-MiniLM-L6-v2",
+  "embedding_dim": 384,
+  "n_cases": 100,
+  "n_clusters": 5,
+  "projection": "pca",
+  "silhouette": 0.1238,
+  "cluster_space_dims": 10,
+  "separation_gain": 1.65,
+  "separation_note": "Inter-cluster spacing is a presentation transform for legibility. Intra-cluster geometry is unmodified. Gaps are not measured distances.",
+  "true_geometry_note": "Switch the canvas to TRUE geometry to see the projection with no amplification applied. Measured semantic distance is reported per case as cosine similarity in the full 384-dimensional space, which no projection can distort.",
+  "variance_retained": 0.14352354407310486,
+  "variance_note": "Share of the embedding variance surviving the squash to 3 axes. The rest is lost, which is why on-screen proximity is a hint and the cosine figures on each case card are the measurement.",
+  "generated": "2026-08-26 21:41"
+ },
+ "departments": [
+  "Acute Medicine",
+  "Anaesthetics",
+  "Cardiology",
+  "Emergency Department",
+  "General Surgery",
+  "Intensive Care",
+  "Obstetrics & Gynaecology",
+  "Oncology",
+  "Orthopaedics",
+  "Paediatrics"
+ ],
+ "clusters": [
+  {
+   "id": 0,
+   "label": "Notes / Paper / Transfer",
+   "color": "#00B3B3",
+   "size": 24,
+   "keywords": [
+    "notes",
+    "paper",
+    "transfer",
+    "alarm",
+    "plan",
+    "machine",
+    "medical",
+    "nursing"
+   ],
+   "cohesion": 0.2413,
+   "nearest_cluster": 1,
+   "nearest_similarity": 0.6817
+  },
+  {
+   "id": 1,
+   "label": "Ct / List / Ed",
+   "color": "#FF8A5B",
+   "size": 14,
+   "keywords": [
+    "ct",
+    "list",
+    "ed",
+    "discharged",
+    "scan",
+    "attendance",
+    "presentation",
+    "reported"
+   ],
+   "cohesion": 0.3532,
+   "nearest_cluster": 3,
+   "nearest_similarity": 0.7163
+  },
+  {
+   "id": 2,
+   "label": "Chart / Prescribed / Iv",
+   "color": "#9D8CFF",
+   "size": 25,
+   "keywords": [
+    "chart",
+    "prescribed",
+    "iv",
+    "discharge",
+    "community",
+    "severe",
+    "dose",
+    "infusion"
+   ],
+   "cohesion": 0.2822,
+   "nearest_cluster": 0,
+   "nearest_similarity": 0.6458
+  },
+  {
+   "id": 3,
+   "label": "Waited / Chest / Delay",
+   "color": "#F2C14E",
+   "size": 13,
+   "keywords": [
+    "waited",
+    "chest",
+    "delay",
+    "theatre",
+    "endoscopy",
+    "11",
+    "presentation",
+    "anticoagulation"
+   ],
+   "cohesion": 0.3099,
+   "nearest_cluster": 1,
+   "nearest_similarity": 0.7163
+  },
+  {
+   "id": 4,
+   "label": "Op / Following / Injury",
+   "color": "#5BD1A0",
+   "size": 24,
+   "keywords": [
+    "op",
+    "following",
+    "injury",
+    "theatre",
+    "dental",
+    "hysterectomy",
+    "attributed",
+    "haemorrhage"
+   ],
+   "cohesion": 0.2266,
+   "nearest_cluster": 3,
+   "nearest_similarity": 0.6786
+  }
+ ],
+ "points": [
+  {
+   "id": "MM-2025-013",
+   "x": -10.952,
+   "y": 42.238,
+   "z": 80.888,
+   "tx": -25.127,
+   "ty": 36.513,
+   "tz": 75.736,
+   "cluster": 0,
+   "department": "Acute Medicine",
+   "severity": 4,
+   "date": "2025-01-11",
+   "summary": "Patient trolley brake mechanism failed during transfer, trolley moved during a slide transfer. Staff back injury and a near-miss for the pt.",
+   "nearest": [
+    {
+     "i": 20,
+     "sim": 0.3395
+    },
+    {
+     "i": 77,
+     "sim": 0.3195
+    },
+    {
+     "i": 84,
+     "sim": 0.3166
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-038",
+   "x": 75.128,
+   "y": -53.391,
+   "z": 4.809,
+   "tx": 60.733,
+   "ty": -46.841,
+   "tz": 12.265,
+   "cluster": 2,
+   "department": "Obstetrics & Gynaecology",
+   "severity": 1,
+   "date": "2025-01-22",
+   "summary": "Insulin units written as 'u' — read as a zero. 8u became 80u. Severe hypo, GCS 6, recovered with IV dextrose. Abbreviation banned locally since 2019.",
+   "nearest": [
+    {
+     "i": 76,
+     "sim": 0.3822
+    },
+    {
+     "i": 95,
+     "sim": 0.3526
+    },
+    {
+     "i": 63,
+     "sim": 0.3519
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-067",
+   "x": -1.637,
+   "y": -27.291,
+   "z": 61.674,
+   "tx": -13.293,
+   "ty": -51.834,
+   "tz": 51.322,
+   "cluster": 0,
+   "department": "Oncology",
+   "severity": 1,
+   "date": "2025-01-26",
+   "summary": "Piped oxygen outlet in bay 4 delivering below expected pressure. Estates confirmed a partially closed isolation valve after a weekend refurbishment.",
+   "nearest": [
+    {
+     "i": 67,
+     "sim": 0.288
+    },
+    {
+     "i": 90,
+     "sim": 0.2749
+    },
+    {
+     "i": 44,
+     "sim": 0.2663
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-085",
+   "x": 18.825,
+   "y": 67.101,
+   "z": 31.483,
+   "tx": 12.707,
+   "ty": 68.104,
+   "tz": 12.96,
+   "cluster": 0,
+   "department": "Acute Medicine",
+   "severity": 3,
+   "date": "2025-02-01",
+   "summary": "Consultant plan documented in the notes as 'for theatre if deteriorates' with no parameters defined. Overnight team had no threshold to act on.",
+   "nearest": [
+    {
+     "i": 35,
+     "sim": 0.4384
+    },
+    {
+     "i": 13,
+     "sim": 0.406
+    },
+    {
+     "i": 84,
+     "sim": 0.39
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-045",
+   "x": -88.977,
+   "y": -23.097,
+   "z": 20.408,
+   "tx": -75.35,
+   "ty": -16.829,
+   "tz": 22.281,
+   "cluster": 4,
+   "department": "Acute Medicine",
+   "severity": 1,
+   "date": "2025-02-02",
+   "summary": "Failed extubation post thyroidectomy from bilateral recurrent laryngeal nerve palsy. Emergency tracheostomy. Nerve monitoring was unavailable that list.",
+   "nearest": [
+    {
+     "i": 78,
+     "sim": 0.4145
+    },
+    {
+     "i": 60,
+     "sim": 0.3953
+    },
+    {
+     "i": 24,
+     "sim": 0.3724
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-054",
+   "x": 29.82,
+   "y": 25.25,
+   "z": 76.995,
+   "tx": 26.679,
+   "ty": 14.927,
+   "tz": 70.79,
+   "cluster": 0,
+   "department": "Emergency Department",
+   "severity": 3,
+   "date": "2025-02-05",
+   "summary": "Defibrillator failed self-test at the start of the arrest call. Backup unit fetched from the adjacent ward, 3-minute delay to first shock.",
+   "nearest": [
+    {
+     "i": 54,
+     "sim": 0.4466
+    },
+    {
+     "i": 53,
+     "sim": 0.4314
+    },
+    {
+     "i": 12,
+     "sim": 0.4133
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-064",
+   "x": -26.076,
+   "y": 58.769,
+   "z": -26.574,
+   "tx": -29.893,
+   "ty": 47.916,
+   "tz": -13.103,
+   "cluster": 1,
+   "department": "Oncology",
+   "severity": 1,
+   "date": "2025-02-10",
+   "summary": "Paediatric limp seen twice and discharged; septic arthritis of the hip diagnosed on the third visit. Kocher criteria not applied at either earlier attendance.",
+   "nearest": [
+    {
+     "i": 26,
+     "sim": 0.3648
+    },
+    {
+     "i": 13,
+     "sim": 0.3628
+    },
+    {
+     "i": 48,
+     "sim": 0.3618
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-072",
+   "x": -59.326,
+   "y": -25.147,
+   "z": 9.493,
+   "tx": -37.674,
+   "ty": -19.434,
+   "tz": 8.413,
+   "cluster": 4,
+   "department": "General Surgery",
+   "severity": 3,
+   "date": "2025-02-12",
+   "summary": "Testicular torsion in a teenager attributed to epididymitis. Ultrasound at 9 hours. Orchidectomy at exploration.",
+   "nearest": [
+    {
+     "i": 75,
+     "sim": 0.311
+    },
+    {
+     "i": 39,
+     "sim": 0.2824
+    },
+    {
+     "i": 21,
+     "sim": 0.2304
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-008",
+   "x": 95.91,
+   "y": -57.57,
+   "z": -3.54,
+   "tx": 87.139,
+   "ty": -52.151,
+   "tz": 1.656,
+   "cluster": 2,
+   "department": "General Surgery",
+   "severity": 4,
+   "date": "2025-02-21",
+   "summary": "Pt self-administered their own home inhalers alongside ward-prescribed nebulisers; cumulative salbutamol load, tachyarrhythmia. No medicines reconciliation on admission.",
+   "nearest": [
+    {
+     "i": 31,
+     "sim": 0.5233
+    },
+    {
+     "i": 29,
+     "sim": 0.4865
+    },
+    {
+     "i": 85,
+     "sim": 0.4764
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-043",
+   "x": -52.134,
+   "y": 21.086,
+   "z": 28.325,
+   "tx": -28.536,
+   "ty": 39.312,
+   "tz": 32.341,
+   "cluster": 4,
+   "department": "Cardiology",
+   "severity": 3,
+   "date": "2025-02-24",
+   "summary": "Endoscope reprocessing cycle aborted mid-run; the scope was returned to the rack as clean. Traceability audit triggered recall of 6 pts for testing.",
+   "nearest": [
+    {
+     "i": 47,
+     "sim": 0.3782
+    },
+    {
+     "i": 32,
+     "sim": 0.3662
+    },
+    {
+     "i": 66,
+     "sim": 0.3635
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-080",
+   "x": -37.626,
+   "y": -23.627,
+   "z": -58.917,
+   "tx": -33.431,
+   "ty": -33.027,
+   "tz": -52.287,
+   "cluster": 3,
+   "department": "Emergency Department",
+   "severity": 2,
+   "date": "2025-02-28",
+   "summary": "Prosthetic joint infection at 5 weeks post primary TKR. Debridement and liner exchange. Prophylactic antibiotic given after tourniquet inflation rather than before.",
+   "nearest": [
+    {
+     "i": 40,
+     "sim": 0.4774
+    },
+    {
+     "i": 83,
+     "sim": 0.4236
+    },
+    {
+     "i": 87,
+     "sim": 0.3964
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-081",
+   "x": -86.837,
+   "y": -14.533,
+   "z": -1.129,
+   "tx": -72.63,
+   "ty": -5.947,
+   "tz": -5.084,
+   "cluster": 4,
+   "department": "Paediatrics",
+   "severity": 2,
+   "date": "2025-03-01",
+   "summary": "Skin flap necrosis after mastectomy in an active smoker. Smoking cessation was offered and declined; documented consent discussion covered this risk.",
+   "nearest": [
+    {
+     "i": 40,
+     "sim": 0.3726
+    },
+    {
+     "i": 32,
+     "sim": 0.3404
+    },
+    {
+     "i": 14,
+     "sim": 0.3393
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-023",
+   "x": 33.755,
+   "y": 48.88,
+   "z": 38.188,
+   "tx": 31.678,
+   "ty": 44.953,
+   "tz": 21.48,
+   "cluster": 0,
+   "department": "Obstetrics & Gynaecology",
+   "severity": 4,
+   "date": "2025-03-04",
+   "summary": "EPR outage for 4 hours with no printed downtime pack available on the ward. Observations recorded on paper towels and later transcribed with gaps.",
+   "nearest": [
+    {
+     "i": 5,
+     "sim": 0.4133
+    },
+    {
+     "i": 77,
+     "sim": 0.4026
+    },
+    {
+     "i": 20,
+     "sim": 0.377
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-087",
+   "x": -1.087,
+   "y": 62.346,
+   "z": -38.685,
+   "tx": 1.859,
+   "ty": 52.46,
+   "tz": -28.492,
+   "cluster": 1,
+   "department": "Orthopaedics",
+   "severity": 2,
+   "date": "2025-03-13",
+   "summary": "Theatre list order changed without informing the ward. Pt not starved appropriately, case cancelled, re-listed 5 days later with disease progression in the interval.",
+   "nearest": [
+    {
+     "i": 84,
+     "sim": 0.4918
+    },
+    {
+     "i": 52,
+     "sim": 0.4903
+    },
+    {
+     "i": 48,
+     "sim": 0.4792
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-071",
+   "x": -56.657,
+   "y": -42.718,
+   "z": -6.589,
+   "tx": -34.283,
+   "ty": -41.761,
+   "tz": -12.022,
+   "cluster": 4,
+   "department": "Orthopaedics",
+   "severity": 3,
+   "date": "2025-03-14",
+   "summary": "Iatrogenic pneumothorax following supraclavicular block, chest drain required. Ultrasound guidance in use but needle tip lost from view during advancement.",
+   "nearest": [
+    {
+     "i": 32,
+     "sim": 0.4109
+    },
+    {
+     "i": 16,
+     "sim": 0.3725
+    },
+    {
+     "i": 82,
+     "sim": 0.3685
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-004",
+   "x": -33.286,
+   "y": 10.298,
+   "z": -59.154,
+   "tx": -27.917,
+   "ty": 10.08,
+   "tz": -52.588,
+   "cluster": 3,
+   "department": "Intensive Care",
+   "severity": 4,
+   "date": "2025-03-18",
+   "summary": "Necrotising fasciitis initially treated as cellulitis. LRINEC not calculated. Time from presentation to theatre 19 hours.",
+   "nearest": [
+    {
+     "i": 39,
+     "sim": 0.4728
+    },
+    {
+     "i": 13,
+     "sim": 0.4436
+    },
+    {
+     "i": 87,
+     "sim": 0.4168
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-020",
+   "x": -41.227,
+   "y": -55.133,
+   "z": 6.162,
+   "tx": -14.676,
+   "ty": -57.536,
+   "tz": 4.18,
+   "cluster": 4,
+   "department": "Obstetrics & Gynaecology",
+   "severity": 4,
+   "date": "2025-03-25",
+   "summary": "Central venous catheter guidewire sheared on withdrawal through the introducer needle. Fragment retrieved by interventional radiology.",
+   "nearest": [
+    {
+     "i": 67,
+     "sim": 0.4471
+    },
+    {
+     "i": 14,
+     "sim": 0.3725
+    },
+    {
+     "i": 66,
+     "sim": 0.3637
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-009",
+   "x": 75.337,
+   "y": -49.783,
+   "z": -22.869,
+   "tx": 60.999,
+   "ty": -42.256,
+   "tz": -22.904,
+   "cluster": 2,
+   "department": "Emergency Department",
+   "severity": 4,
+   "date": "2025-03-25",
+   "summary": "Opioid-naive pt started on long-acting oxycodone plus PRN immediate release with no review interval set. Respiratory rate 6 at 0400, found by HCA on obs round.",
+   "nearest": [
+    {
+     "i": 22,
+     "sim": 0.5538
+    },
+    {
+     "i": 8,
+     "sim": 0.4346
+    },
+    {
+     "i": 31,
+     "sim": 0.4208
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-016",
+   "x": -26.492,
+   "y": 20.077,
+   "z": -22.003,
+   "tx": -19.283,
+   "ty": 22.506,
+   "tz": -5.383,
+   "cluster": 3,
+   "department": "Anaesthetics",
+   "severity": 1,
+   "date": "2025-03-27",
+   "summary": "Escalation to critical care requested at 1600, bed available at 0300. Organ support started 11 hours after it was indicated.",
+   "nearest": [
+    {
+     "i": 76,
+     "sim": 0.4652
+    },
+    {
+     "i": 44,
+     "sim": 0.4488
+    },
+    {
+     "i": 87,
+     "sim": 0.4429
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-098",
+   "x": -56.743,
+   "y": -61.296,
+   "z": 43.178,
+   "tx": -34.391,
+   "ty": -65.366,
+   "tz": 51.214,
+   "cluster": 4,
+   "department": "Cardiology",
+   "severity": 1,
+   "date": "2025-04-06",
+   "summary": "Delayed recognition of compartment pressures after a crush injury because analgesia requirement was attributed to anxiety.",
+   "nearest": [
+    {
+     "i": 50,
+     "sim": 0.4752
+    },
+    {
+     "i": 29,
+     "sim": 0.343
+    },
+    {
+     "i": 78,
+     "sim": 0.3021
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-047",
+   "x": 24.555,
+   "y": 59.822,
+   "z": 39.76,
+   "tx": 19.988,
+   "ty": 58.855,
+   "tz": 23.477,
+   "cluster": 0,
+   "department": "Paediatrics",
+   "severity": 3,
+   "date": "2025-04-13",
+   "summary": "DNACPR decision made and discussed with family but not communicated to the ambulance crew on transfer. CPR attempted inappropriately during conveyance.",
+   "nearest": [
+    {
+     "i": 35,
+     "sim": 0.43
+    },
+    {
+     "i": 5,
+     "sim": 0.4132
+    },
+    {
+     "i": 43,
+     "sim": 0.41
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-094",
+   "x": 55.133,
+   "y": -57.775,
+   "z": -14.576,
+   "tx": 35.327,
+   "ty": -52.412,
+   "tz": -12.366,
+   "cluster": 2,
+   "department": "Intensive Care",
+   "severity": 4,
+   "date": "2025-04-23",
+   "summary": "Blood thinner mistake on the ward — pt was on apixaban at home, restarted post-op without holding for the epidural. Epidural haematoma, urgent MRI.",
+   "nearest": [
+    {
+     "i": 63,
+     "sim": 0.483
+    },
+    {
+     "i": 75,
+     "sim": 0.4615
+    },
+    {
+     "i": 85,
+     "sim": 0.4445
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-030",
+   "x": 85.808,
+   "y": -26.339,
+   "z": -30.623,
+   "tx": 74.303,
+   "ty": -12.467,
+   "tz": -32.756,
+   "cluster": 2,
+   "department": "Paediatrics",
+   "severity": 4,
+   "date": "2025-04-24",
+   "summary": "Pt received 10x intended dose of IV morphine overnight; decimal point error on the handwritten drug chart, not caught at second check. Naloxone given, full recovery.",
+   "nearest": [
+    {
+     "i": 17,
+     "sim": 0.5538
+    },
+    {
+     "i": 63,
+     "sim": 0.5407
+    },
+    {
+     "i": 85,
+     "sim": 0.4841
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-074",
+   "x": -39.926,
+   "y": -18.359,
+   "z": -31.685,
+   "tx": -36.354,
+   "ty": -26.332,
+   "tz": -17.685,
+   "cluster": 3,
+   "department": "Paediatrics",
+   "severity": 2,
+   "date": "2025-04-25",
+   "summary": "Aortic dissection labelled as ACS for 6 hours. Chest pain pathway is highly optimised for ACS and pulls everything into it.",
+   "nearest": [
+    {
+     "i": 93,
+     "sim": 0.3626
+    },
+    {
+     "i": 14,
+     "sim": 0.3595
+    },
+    {
+     "i": 82,
+     "sim": 0.3506
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-040",
+   "x": -81.703,
+   "y": -20.255,
+   "z": -7.284,
+   "tx": -66.106,
+   "ty": -13.218,
+   "tz": -12.904,
+   "cluster": 4,
+   "department": "Paediatrics",
+   "severity": 2,
+   "date": "2025-04-25",
+   "summary": "Wrong-level spinal surgery — decompression at L3/4 rather than L4/5. Intraoperative imaging performed but counted from the wrong reference vertebra.",
+   "nearest": [
+    {
+     "i": 4,
+     "sim": 0.3724
+    },
+    {
+     "i": 82,
+     "sim": 0.3457
+    },
+    {
+     "i": 42,
+     "sim": 0.3353
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-007",
+   "x": -86.895,
+   "y": -39.53,
+   "z": 3.554,
+   "tx": -72.704,
+   "ty": -37.71,
+   "tz": 0.867,
+   "cluster": 4,
+   "department": "Emergency Department",
+   "severity": 3,
+   "date": "2025-04-28",
+   "summary": "Bowel perforation on trocar insertion in a pt with multiple prior laparotomies. Open entry technique had been discussed and not used.",
+   "nearest": [
+    {
+     "i": 83,
+     "sim": 0.5019
+    },
+    {
+     "i": 42,
+     "sim": 0.4196
+    },
+    {
+     "i": 52,
+     "sim": 0.3883
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-036",
+   "x": -15.43,
+   "y": 43.399,
+   "z": -53.959,
+   "tx": -16.366,
+   "ty": 28.386,
+   "tz": -47.899,
+   "cluster": 1,
+   "department": "General Surgery",
+   "severity": 1,
+   "date": "2025-04-28",
+   "summary": "Missed subarachnoid — CT at 8 hours reported normal, LP not performed, discharged. Represented at day 3 with rebleed.",
+   "nearest": [
+    {
+     "i": 84,
+     "sim": 0.5637
+    },
+    {
+     "i": 55,
+     "sim": 0.5283
+    },
+    {
+     "i": 82,
+     "sim": 0.4281
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-034",
+   "x": 67.761,
+   "y": -38.46,
+   "z": 22.362,
+   "tx": 51.373,
+   "ty": -27.869,
+   "tz": 34.568,
+   "cluster": 2,
+   "department": "Acute Medicine",
+   "severity": 3,
+   "date": "2025-05-01",
+   "summary": "Automated dispensing cabinet drawer misloaded by the restocking service — two strengths of the same drug in one pocket. Caught at the bedside check, near miss.",
+   "nearest": [
+    {
+     "i": 45,
+     "sim": 0.4293
+    },
+    {
+     "i": 85,
+     "sim": 0.3791
+    },
+    {
+     "i": 51,
+     "sim": 0.3675
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-065",
+   "x": 21.943,
+   "y": 1.964,
+   "z": 28.248,
+   "tx": 16.669,
+   "ty": -14.661,
+   "tz": 8.85,
+   "cluster": 0,
+   "department": "Cardiology",
+   "severity": 2,
+   "date": "2025-05-06",
+   "summary": "Transfer from ICU to ward with no medical handover, only nursing. Steroid taper plan and adrenal insufficiency risk not conveyed. Addisonian crisis on day 2.",
+   "nearest": [
+    {
+     "i": 18,
+     "sim": 0.4287
+    },
+    {
+     "i": 90,
+     "sim": 0.4177
+    },
+    {
+     "i": 67,
+     "sim": 0.4082
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-052",
+   "x": 66.807,
+   "y": -78.963,
+   "z": -14.801,
+   "tx": 50.161,
+   "ty": -79.333,
+   "tz": -12.652,
+   "cluster": 2,
+   "department": "Emergency Department",
+   "severity": 3,
+   "date": "2025-05-07",
+   "summary": "Double-dosing of paracetamol: regular IV prescribed on the anaesthetic chart and oral PRN on the ward chart simultaneously. Two charts never reconciled.",
+   "nearest": [
+    {
+     "i": 8,
+     "sim": 0.4865
+    },
+    {
+     "i": 22,
+     "sim": 0.4456
+    },
+    {
+     "i": 17,
+     "sim": 0.4182
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-097",
+   "x": 38.255,
+   "y": -95.228,
+   "z": -1.491,
+   "tx": 13.881,
+   "ty": -100.0,
+   "tz": 4.26,
+   "cluster": 2,
+   "department": "Emergency Department",
+   "severity": 5,
+   "date": "2025-05-07",
+   "summary": "Potassium infusion given peripherally at 40mmol/L concentration. Severe phlebitis and extravasation injury. Central access was available and unused.",
+   "nearest": [
+    {
+     "i": 33,
+     "sim": 0.519
+    },
+    {
+     "i": 63,
+     "sim": 0.3994
+    },
+    {
+     "i": 21,
+     "sim": 0.3988
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-039",
+   "x": 97.669,
+   "y": -25.832,
+   "z": -10.637,
+   "tx": 89.374,
+   "ty": -11.824,
+   "tz": -7.362,
+   "cluster": 2,
+   "department": "Orthopaedics",
+   "severity": 4,
+   "date": "2025-05-07",
+   "summary": "Pt with documented penicillin anaphylaxis given co-amoxiclav in ED. Allergy band present but allergy field in EPR was free-text, not coded, so no hard stop fired.",
+   "nearest": [
+    {
+     "i": 49,
+     "sim": 0.535
+    },
+    {
+     "i": 8,
+     "sim": 0.5233
+    },
+    {
+     "i": 92,
+     "sim": 0.4751
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-049",
+   "x": -31.758,
+   "y": 64.688,
+   "z": -42.862,
+   "tx": -37.112,
+   "ty": 55.437,
+   "tz": -33.799,
+   "cluster": 1,
+   "department": "Acute Medicine",
+   "severity": 3,
+   "date": "2025-05-13",
+   "summary": "Radiology reported an incidental lung nodule; report auto-filed to a clinician who had left the trust. No safety-netting loop. Picked up 14 months later.",
+   "nearest": [
+    {
+     "i": 82,
+     "sim": 0.5884
+    },
+    {
+     "i": 55,
+     "sim": 0.5101
+    },
+    {
+     "i": 14,
+     "sim": 0.4109
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-100",
+   "x": 86.053,
+   "y": -21.629,
+   "z": 23.366,
+   "tx": 74.615,
+   "ty": -6.483,
+   "tz": 35.845,
+   "cluster": 2,
+   "department": "Orthopaedics",
+   "severity": 2,
+   "date": "2025-05-13",
+   "summary": "Critical potassium of 6.9 phoned to the ward by lab; the message was taken by a ward clerk and written on a sticky note. Never reached a clinician.",
+   "nearest": [
+    {
+     "i": 30,
+     "sim": 0.519
+    },
+    {
+     "i": 37,
+     "sim": 0.4423
+    },
+    {
+     "i": 49,
+     "sim": 0.3926
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-017",
+   "x": 6.676,
+   "y": 64.278,
+   "z": -28.761,
+   "tx": 11.723,
+   "ty": 54.916,
+   "tz": -15.881,
+   "cluster": 1,
+   "department": "Paediatrics",
+   "severity": 4,
+   "date": "2025-05-20",
+   "summary": "Deteriorating NEWS score of 9 recorded at 2200 and again at 2300; medical review not attended until 0130. No harm but avoidable delay to intervention.",
+   "nearest": [
+    {
+     "i": 48,
+     "sim": 0.4884
+    },
+    {
+     "i": 13,
+     "sim": 0.4437
+    },
+    {
+     "i": 57,
+     "sim": 0.421
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-084",
+   "x": 20.312,
+   "y": 30.072,
+   "z": 22.934,
+   "tx": 14.597,
+   "ty": 21.054,
+   "tz": 2.098,
+   "cluster": 0,
+   "department": "Paediatrics",
+   "severity": 3,
+   "date": "2025-05-21",
+   "summary": "Two teams (medical and surgical) both documented in the notes, neither acknowledged the other's plan. Contradictory fluid instructions on the same day.",
+   "nearest": [
+    {
+     "i": 3,
+     "sim": 0.4384
+    },
+    {
+     "i": 20,
+     "sim": 0.43
+    },
+    {
+     "i": 83,
+     "sim": 0.4108
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-086",
+   "x": 63.866,
+   "y": -33.949,
+   "z": -3.035,
+   "tx": 46.424,
+   "ty": -22.137,
+   "tz": 2.298,
+   "cluster": 2,
+   "department": "General Surgery",
+   "severity": 1,
+   "date": "2025-05-27",
+   "summary": "Pulse oximeter consistently over-reading in a pt with deeply pigmented skin; occult hypoxaemia. Known device-class limitation, no local guidance in place.",
+   "nearest": [
+    {
+     "i": 63,
+     "sim": 0.4419
+    },
+    {
+     "i": 17,
+     "sim": 0.4158
+    },
+    {
+     "i": 81,
+     "sim": 0.3999
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-082",
+   "x": 44.071,
+   "y": 33.404,
+   "z": 58.893,
+   "tx": 44.786,
+   "ty": 25.287,
+   "tz": 47.788,
+   "cluster": 0,
+   "department": "Oncology",
+   "severity": 2,
+   "date": "2025-05-30",
+   "summary": "Dialysis machine conductivity alarm ignored as it had cried wolf all week. The alarm was genuine; treatment aborted, no harm, machine withdrawn.",
+   "nearest": [
+    {
+     "i": 33,
+     "sim": 0.4423
+    },
+    {
+     "i": 54,
+     "sim": 0.4001
+    },
+    {
+     "i": 90,
+     "sim": 0.3991
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-058",
+   "x": -100.0,
+   "y": -19.427,
+   "z": 39.239,
+   "tx": -89.356,
+   "ty": -12.167,
+   "tz": 46.209,
+   "cluster": 4,
+   "department": "Intensive Care",
+   "severity": 5,
+   "date": "2025-06-06",
+   "summary": "Instrument fracture — tip of a laparoscopic grasper sheared and retained in the abdomen, retrieved same sitting under vision. Instrument was overdue for service.",
+   "nearest": [
+    {
+     "i": 83,
+     "sim": 0.3851
+    },
+    {
+     "i": 64,
+     "sim": 0.3783
+    },
+    {
+     "i": 25,
+     "sim": 0.3493
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-019",
+   "x": -50.684,
+   "y": 2.768,
+   "z": -28.145,
+   "tx": -50.023,
+   "ty": 0.512,
+   "tz": -13.187,
+   "cluster": 3,
+   "department": "Paediatrics",
+   "severity": 3,
+   "date": "2025-06-07",
+   "summary": "Compartment syndrome of the leg missed for 11 hours post tibial nailing. Fasciotomy performed late; residual foot drop at 6 months.",
+   "nearest": [
+    {
+     "i": 15,
+     "sim": 0.4728
+    },
+    {
+     "i": 10,
+     "sim": 0.3767
+    },
+    {
+     "i": 93,
+     "sim": 0.3709
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-024",
+   "x": -79.102,
+   "y": -39.792,
+   "z": -16.44,
+   "tx": -62.802,
+   "ty": -38.043,
+   "tz": -24.539,
+   "cluster": 4,
+   "department": "Intensive Care",
+   "severity": 1,
+   "date": "2025-06-12",
+   "summary": "Deep sternal wound infection post CABG in a poorly-controlled diabetic. VAC dressing, pectoral flap at week 3. HbA1c 94 pre-op, surgery not deferred.",
+   "nearest": [
+    {
+     "i": 10,
+     "sim": 0.4774
+    },
+    {
+     "i": 11,
+     "sim": 0.3726
+    },
+    {
+     "i": 83,
+     "sim": 0.3516
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-070",
+   "x": 14.733,
+   "y": 16.615,
+   "z": -89.409,
+   "tx": 33.099,
+   "ty": 18.106,
+   "tz": -91.032,
+   "cluster": 3,
+   "department": "Intensive Care",
+   "severity": 2,
+   "date": "2025-06-15",
+   "summary": "Chemo cycle given at day 14 instead of day 21. Neutropenic sepsis. Cycle interval transcribed incorrectly onto the local schedule from the trial protocol.",
+   "nearest": [
+    {
+     "i": 87,
+     "sim": 0.5202
+    },
+    {
+     "i": 73,
+     "sim": 0.4074
+    },
+    {
+     "i": 95,
+     "sim": 0.3808
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-060",
+   "x": -85.849,
+   "y": -13.433,
+   "z": -33.632,
+   "tx": -71.374,
+   "ty": -4.55,
+   "tz": -46.384,
+   "cluster": 4,
+   "department": "General Surgery",
+   "severity": 1,
+   "date": "2025-06-15",
+   "summary": "Post-op collection following appendicectomy in a perforated case, drained radiologically on day 6. Recognised course rather than a departure from standard.",
+   "nearest": [
+    {
+     "i": 83,
+     "sim": 0.5206
+    },
+    {
+     "i": 82,
+     "sim": 0.458
+    },
+    {
+     "i": 55,
+     "sim": 0.4449
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-069",
+   "x": -46.884,
+   "y": 11.043,
+   "z": 10.055,
+   "tx": -21.865,
+   "ty": 26.551,
+   "tz": 9.126,
+   "cluster": 4,
+   "department": "Orthopaedics",
+   "severity": 2,
+   "date": "2025-06-16",
+   "summary": "Language barrier — consent for a procedure taken via the pt's adult son rather than an interpreter. Post-op the pt stated they had not understood the stoma risk.",
+   "nearest": [
+    {
+     "i": 20,
+     "sim": 0.41
+    },
+    {
+     "i": 84,
+     "sim": 0.3626
+    },
+    {
+     "i": 35,
+     "sim": 0.3486
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-099",
+   "x": 19.542,
+   "y": 5.333,
+   "z": 58.173,
+   "tx": 13.618,
+   "ty": -10.381,
+   "tz": 46.874,
+   "cluster": 0,
+   "department": "Cardiology",
+   "severity": 4,
+   "date": "2025-06-25",
+   "summary": "Ventilator settings not handed over at shift change — new nurse assumed pressure support was the standing mode. Pt on mandatory ventilation, asynchrony and agitation for 2h.",
+   "nearest": [
+    {
+     "i": 90,
+     "sim": 0.4772
+    },
+    {
+     "i": 18,
+     "sim": 0.4488
+    },
+    {
+     "i": 49,
+     "sim": 0.3986
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-046",
+   "x": 91.2,
+   "y": -60.371,
+   "z": 13.552,
+   "tx": 81.155,
+   "ty": -55.71,
+   "tz": 23.375,
+   "cluster": 2,
+   "department": "Acute Medicine",
+   "severity": 2,
+   "date": "2025-06-28",
+   "summary": "Sound-alike substitution: hydralazine dispensed instead of hydroxyzine from ward stock. Both stored in adjacent bins with near-identical box livery.",
+   "nearest": [
+    {
+     "i": 27,
+     "sim": 0.4293
+    },
+    {
+     "i": 8,
+     "sim": 0.4069
+    },
+    {
+     "i": 99,
+     "sim": 0.3786
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-015",
+   "x": 75.798,
+   "y": -30.697,
+   "z": -20.863,
+   "tx": 61.584,
+   "ty": -18.005,
+   "tz": -20.355,
+   "cluster": 2,
+   "department": "Acute Medicine",
+   "severity": 2,
+   "date": "2025-06-29",
+   "summary": "Gentamicin dosed on actual body weight in a morbidly obese pt. AKI stage 2 by day 3. Pharmacy flagged it but the alert sat unactioned in the EPR queue.",
+   "nearest": [
+    {
+     "i": 29,
+     "sim": 0.3979
+    },
+    {
+     "i": 21,
+     "sim": 0.3957
+    },
+    {
+     "i": 22,
+     "sim": 0.3882
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-083",
+   "x": -42.59,
+   "y": 17.975,
+   "z": -30.306,
+   "tx": -39.738,
+   "ty": 19.835,
+   "tz": -15.934,
+   "cluster": 3,
+   "department": "Intensive Care",
+   "severity": 4,
+   "date": "2025-06-30",
+   "summary": "Upper GI bleed with a shock index above 1 waited overnight for endoscopy; the out-of-hours rota was on-call from home with a 60-minute call-in.",
+   "nearest": [
+    {
+     "i": 83,
+     "sim": 0.4383
+    },
+    {
+     "i": 66,
+     "sim": 0.4301
+    },
+    {
+     "i": 18,
+     "sim": 0.4272
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-075",
+   "x": 19.446,
+   "y": 48.178,
+   "z": -54.433,
+   "tx": 27.949,
+   "ty": 34.458,
+   "tz": -48.501,
+   "cluster": 1,
+   "department": "Acute Medicine",
+   "severity": 4,
+   "date": "2025-07-03",
+   "summary": "Weekend cross-cover received a list of 46 pts with no priority ordering and no clinical context. The sickest pt was reviewed fifth.",
+   "nearest": [
+    {
+     "i": 34,
+     "sim": 0.4884
+    },
+    {
+     "i": 13,
+     "sim": 0.4792
+    },
+    {
+     "i": 84,
+     "sim": 0.4362
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-095",
+   "x": 47.733,
+   "y": 27.826,
+   "z": 67.834,
+   "tx": 49.44,
+   "ty": 18.201,
+   "tz": 59.149,
+   "cluster": 0,
+   "department": "Paediatrics",
+   "severity": 5,
+   "date": "2025-07-06",
+   "summary": "Handoff of an unwell pt occurred in a corridor during a fire alarm. No structured tool used. Allergy status and resus decision both omitted.",
+   "nearest": [
+    {
+     "i": 31,
+     "sim": 0.535
+    },
+    {
+     "i": 84,
+     "sim": 0.465
+    },
+    {
+     "i": 90,
+     "sim": 0.4591
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-093",
+   "x": 20.498,
+   "y": -53.633,
+   "z": 44.662,
+   "tx": -8.682,
+   "ty": -47.148,
+   "tz": 62.903,
+   "cluster": 2,
+   "department": "General Surgery",
+   "severity": 5,
+   "date": "2025-07-11",
+   "summary": "Syringe driver keypad unresponsive after a cleaning-fluid ingress. Analgesia interrupted for 90 minutes on a palliative pt.",
+   "nearest": [
+    {
+     "i": 19,
+     "sim": 0.4752
+    },
+    {
+     "i": 78,
+     "sim": 0.4096
+    },
+    {
+     "i": 53,
+     "sim": 0.3742
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-091",
+   "x": -33.39,
+   "y": 2.971,
+   "z": -15.27,
+   "tx": -28.048,
+   "ty": 0.77,
+   "tz": 3.173,
+   "cluster": 3,
+   "department": "Oncology",
+   "severity": 3,
+   "date": "2025-07-14",
+   "summary": "Implant tray delivered with a mismatched trial component set. Case delayed 55 minutes under anaesthesia while the correct tray was couriered.",
+   "nearest": [
+    {
+     "i": 52,
+     "sim": 0.4138
+    },
+    {
+     "i": 83,
+     "sim": 0.396
+    },
+    {
+     "i": 27,
+     "sim": 0.3675
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-076",
+   "x": -61.191,
+   "y": 20.572,
+   "z": -40.084,
+   "tx": -63.374,
+   "ty": 23.134,
+   "tz": -28.357,
+   "cluster": 3,
+   "department": "Orthopaedics",
+   "severity": 2,
+   "date": "2025-07-14",
+   "summary": "No surgical complication noted; the delay was in getting to theatre. Perforated viscus waited 14 hours for an emergency slot because of list contention.",
+   "nearest": [
+    {
+     "i": 13,
+     "sim": 0.4903
+    },
+    {
+     "i": 87,
+     "sim": 0.4466
+    },
+    {
+     "i": 93,
+     "sim": 0.4353
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-011",
+   "x": 2.961,
+   "y": 6.248,
+   "z": 89.813,
+   "tx": -7.449,
+   "ty": -9.217,
+   "tz": 87.077,
+   "cluster": 0,
+   "department": "Oncology",
+   "severity": 5,
+   "date": "2025-07-20",
+   "summary": "Surgical diathermy return electrode partially detached, causing a full-thickness burn at the pad site. Contact quality monitor was disabled on that generator model.",
+   "nearest": [
+    {
+     "i": 94,
+     "sim": 0.4439
+    },
+    {
+     "i": 5,
+     "sim": 0.4314
+    },
+    {
+     "i": 50,
+     "sim": 0.3742
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-055",
+   "x": 36.174,
+   "y": 41.069,
+   "z": 61.108,
+   "tx": 34.752,
+   "ty": 35.027,
+   "tz": 50.603,
+   "cluster": 0,
+   "department": "Orthopaedics",
+   "severity": 5,
+   "date": "2025-07-24",
+   "summary": "Telemetry pack battery failed silently — no alarm at the central station. Pt had an unwitnessed run of VT discovered later on the implanted device interrogation.",
+   "nearest": [
+    {
+     "i": 5,
+     "sim": 0.4466
+    },
+    {
+     "i": 37,
+     "sim": 0.4001
+    },
+    {
+     "i": 20,
+     "sim": 0.3514
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-032",
+   "x": -25.453,
+   "y": 73.181,
+   "z": -80.604,
+   "tx": -29.101,
+   "ty": 66.228,
+   "tz": -81.755,
+   "cluster": 1,
+   "department": "Obstetrics & Gynaecology",
+   "severity": 3,
+   "date": "2025-07-29",
+   "summary": "Malignancy suspected on a CT performed for another indication. The recommendation for further imaging sat in an unreviewed queue for 7 weeks.",
+   "nearest": [
+    {
+     "i": 84,
+     "sim": 0.5632
+    },
+    {
+     "i": 82,
+     "sim": 0.5407
+    },
+    {
+     "i": 26,
+     "sim": 0.5283
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-096",
+   "x": 20.49,
+   "y": 28.158,
+   "z": 36.469,
+   "tx": 14.824,
+   "ty": 18.622,
+   "tz": 19.296,
+   "cluster": 0,
+   "department": "Oncology",
+   "severity": 4,
+   "date": "2025-08-02",
+   "summary": "Blood gas analyser gave three implausible lactates in succession; cartridge had expired. Expiry checks were on a paper log that had lapsed.",
+   "nearest": [
+    {
+     "i": 9,
+     "sim": 0.3584
+    },
+    {
+     "i": 35,
+     "sim": 0.3574
+    },
+    {
+     "i": 83,
+     "sim": 0.3306
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-044",
+   "x": 25.798,
+   "y": 63.142,
+   "z": 52.417,
+   "tx": 21.568,
+   "ty": 63.074,
+   "tz": 39.56,
+   "cluster": 0,
+   "department": "Anaesthetics",
+   "severity": 4,
+   "date": "2025-08-04",
+   "summary": "SBAR not used on a deteriorating-patient call — the referral led with the social history and the news score was mentioned last. Response was not prioritised.",
+   "nearest": [
+    {
+     "i": 34,
+     "sim": 0.421
+    },
+    {
+     "i": 37,
+     "sim": 0.3813
+    },
+    {
+     "i": 71,
+     "sim": 0.3321
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-048",
+   "x": 64.78,
+   "y": -49.681,
+   "z": -6.474,
+   "tx": 47.585,
+   "ty": -42.127,
+   "tz": -2.072,
+   "cluster": 2,
+   "department": "Emergency Department",
+   "severity": 2,
+   "date": "2025-08-10",
+   "summary": "Heparin administration error: infusion running at 1400 units/hr instead of 800. APTT supratherapeutic at 6h. Pump programmed from the wrong protocol card.",
+   "nearest": [
+    {
+     "i": 67,
+     "sim": 0.3561
+    },
+    {
+     "i": 66,
+     "sim": 0.3316
+    },
+    {
+     "i": 1,
+     "sim": 0.3189
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-010",
+   "x": -22.39,
+   "y": 59.525,
+   "z": -23.479,
+   "tx": -25.209,
+   "ty": 48.876,
+   "tz": -9.17,
+   "cluster": 1,
+   "department": "Oncology",
+   "severity": 1,
+   "date": "2025-08-10",
+   "summary": "Suspected stroke arrived within window, but door-to-needle was 118 minutes because CT was occupied by a trauma call and no escalation route existed.",
+   "nearest": [
+    {
+     "i": 84,
+     "sim": 0.5293
+    },
+    {
+     "i": 55,
+     "sim": 0.5072
+    },
+    {
+     "i": 26,
+     "sim": 0.4132
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-006",
+   "x": -74.93,
+   "y": -24.358,
+   "z": 13.024,
+   "tx": -57.501,
+   "ty": -18.431,
+   "tz": 12.899,
+   "cluster": 4,
+   "department": "Oncology",
+   "severity": 3,
+   "date": "2025-08-13",
+   "summary": "Anaesthetic complication — dental damage on laryngoscopy in a pt with known loose crowns. Documented in pre-assessment, not carried into the theatre brief.",
+   "nearest": [
+    {
+     "i": 70,
+     "sim": 0.4549
+    },
+    {
+     "i": 4,
+     "sim": 0.3953
+    },
+    {
+     "i": 98,
+     "sim": 0.3842
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-092",
+   "x": 51.206,
+   "y": -41.185,
+   "z": -45.635,
+   "tx": 30.337,
+   "ty": -31.331,
+   "tz": -51.83,
+   "cluster": 2,
+   "department": "Emergency Department",
+   "severity": 1,
+   "date": "2025-08-14",
+   "summary": "Vancomycin levels not taken before the third dose. Trough 32. Ototoxicity screening arranged. Level request had been raised but never actioned by phlebotomy.",
+   "nearest": [
+    {
+     "i": 68,
+     "sim": 0.384
+    },
+    {
+     "i": 22,
+     "sim": 0.3798
+    },
+    {
+     "i": 87,
+     "sim": 0.3743
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-088",
+   "x": 69.733,
+   "y": -16.812,
+   "z": -33.919,
+   "tx": 53.879,
+   "ty": -0.362,
+   "tz": -36.944,
+   "cluster": 2,
+   "department": "Paediatrics",
+   "severity": 4,
+   "date": "2025-08-20",
+   "summary": "Discharge summary sent to the GP with the medication changes section left as the default template text. Community team continued the pre-admission regimen.",
+   "nearest": [
+    {
+     "i": 95,
+     "sim": 0.4349
+    },
+    {
+     "i": 35,
+     "sim": 0.3936
+    },
+    {
+     "i": 85,
+     "sim": 0.3854
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-056",
+   "x": 62.469,
+   "y": -59.678,
+   "z": -30.12,
+   "tx": 44.649,
+   "ty": -54.83,
+   "tz": -32.118,
+   "cluster": 2,
+   "department": "Orthopaedics",
+   "severity": 3,
+   "date": "2025-08-26",
+   "summary": "IV fluid prescribed as 0.9% saline 3L/24h in a pt with known heart failure and EF 25%. Flash pulmonary oedema overnight. Fluid chart not reviewed at the post-take round.",
+   "nearest": [
+    {
+     "i": 22,
+     "sim": 0.5407
+    },
+    {
+     "i": 21,
+     "sim": 0.483
+    },
+    {
+     "i": 67,
+     "sim": 0.4693
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-042",
+   "x": -80.118,
+   "y": -20.949,
+   "z": 27.394,
+   "tx": -64.093,
+   "ty": -14.1,
+   "tz": 31.158,
+   "cluster": 4,
+   "department": "Cardiology",
+   "severity": 2,
+   "date": "2025-09-05",
+   "summary": "Bile duct injury during difficult lap chole — Strasberg E2. Converted to open, hepatobiliary referral same day. Critical view of safety not achieved before clipping.",
+   "nearest": [
+    {
+     "i": 38,
+     "sim": 0.3783
+    },
+    {
+     "i": 25,
+     "sim": 0.3694
+    },
+    {
+     "i": 83,
+     "sim": 0.3199
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-028",
+   "x": 43.486,
+   "y": 38.46,
+   "z": 42.712,
+   "tx": 44.043,
+   "ty": 31.712,
+   "tz": 27.228,
+   "cluster": 0,
+   "department": "Paediatrics",
+   "severity": 2,
+   "date": "2025-09-06",
+   "summary": "Nursing concern raised at 0200 was recorded in the nursing notes only; medical notes and nursing notes are separate systems here and are not cross-read.",
+   "nearest": [
+    {
+     "i": 34,
+     "sim": 0.355
+    },
+    {
+     "i": 62,
+     "sim": 0.3341
+    },
+    {
+     "i": 97,
+     "sim": 0.3316
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-061",
+   "x": -11.355,
+   "y": -7.339,
+   "z": -41.587,
+   "tx": -0.05,
+   "ty": -12.33,
+   "tz": -30.267,
+   "cluster": 3,
+   "department": "Paediatrics",
+   "severity": 5,
+   "date": "2025-09-07",
+   "summary": "Anticoagulation not restarted after endoscopy despite plan documented in the procedure note. Pt had a mechanical valve. Embolic CVA on day 5.",
+   "nearest": [
+    {
+     "i": 47,
+     "sim": 0.4301
+    },
+    {
+     "i": 95,
+     "sim": 0.4288
+    },
+    {
+     "i": 63,
+     "sim": 0.3919
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-053",
+   "x": 60.788,
+   "y": -80.513,
+   "z": 11.263,
+   "tx": 42.513,
+   "ty": -81.303,
+   "tz": 20.465,
+   "cluster": 2,
+   "department": "Intensive Care",
+   "severity": 4,
+   "date": "2025-09-09",
+   "summary": "Infusion pump free-flowed when the cassette was reseated; 200ml of noradrenaline delivered as a bolus. Device quarantined and reported to MHRA.",
+   "nearest": [
+    {
+     "i": 63,
+     "sim": 0.4693
+    },
+    {
+     "i": 16,
+     "sim": 0.4471
+    },
+    {
+     "i": 8,
+     "sim": 0.4166
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-026",
+   "x": 71.142,
+   "y": -7.14,
+   "z": -23.803,
+   "tx": 55.668,
+   "ty": 11.928,
+   "tz": -24.09,
+   "cluster": 2,
+   "department": "Acute Medicine",
+   "severity": 5,
+   "date": "2025-09-11",
+   "summary": "Microbiology advice given by phone to a junior, not documented anywhere. The advice was then contradicted by the next day's team, antibiotic changed twice.",
+   "nearest": [
+    {
+     "i": 87,
+     "sim": 0.4904
+    },
+    {
+     "i": 35,
+     "sim": 0.3998
+    },
+    {
+     "i": 10,
+     "sim": 0.3842
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-002",
+   "x": 69.464,
+   "y": -32.315,
+   "z": -28.526,
+   "tx": 53.536,
+   "ty": -20.061,
+   "tz": -30.091,
+   "cluster": 2,
+   "department": "Cardiology",
+   "severity": 5,
+   "date": "2025-09-18",
+   "summary": "Enoxaparin prophylaxis omitted for 4 consecutive days — 'nil by mouth' status was wrongly interpreted as hold-all-meds by the covering team. Subsequent PE.",
+   "nearest": [
+    {
+     "i": 31,
+     "sim": 0.4577
+    },
+    {
+     "i": 22,
+     "sim": 0.4112
+    },
+    {
+     "i": 17,
+     "sim": 0.3914
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-018",
+   "x": -86.977,
+   "y": -37.159,
+   "z": -9.19,
+   "tx": -72.808,
+   "ty": -34.698,
+   "tz": -15.326,
+   "cluster": 4,
+   "department": "Acute Medicine",
+   "severity": 4,
+   "date": "2025-09-22",
+   "summary": "Post-tonsillectomy secondary haemorrhage day 7, returned to theatre for arrest of bleeding. Airway compromised on induction, difficult intubation drill activated.",
+   "nearest": [
+    {
+     "i": 60,
+     "sim": 0.4549
+    },
+    {
+     "i": 91,
+     "sim": 0.4293
+    },
+    {
+     "i": 42,
+     "sim": 0.4094
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-063",
+   "x": 35.744,
+   "y": 75.583,
+   "z": 46.404,
+   "tx": 34.206,
+   "ty": 78.882,
+   "tz": 31.919,
+   "cluster": 0,
+   "department": "Acute Medicine",
+   "severity": 4,
+   "date": "2025-09-23",
+   "summary": "GP referral letter contained the key red-flag history; the letter was scanned into the record but ED triage worked from the verbal account only.",
+   "nearest": [
+    {
+     "i": 72,
+     "sim": 0.3584
+    },
+    {
+     "i": 84,
+     "sim": 0.3461
+    },
+    {
+     "i": 57,
+     "sim": 0.3321
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-033",
+   "x": 17.159,
+   "y": 75.515,
+   "z": 70.904,
+   "tx": 10.591,
+   "ty": 78.795,
+   "tz": 63.05,
+   "cluster": 0,
+   "department": "Anaesthetics",
+   "severity": 2,
+   "date": "2025-09-27",
+   "summary": "Escalation failure — F1 concerned about a deteriorating pt, bleeped registrar twice, no response, did not escalate further because of perceived hierarchy.",
+   "nearest": [
+    {
+     "i": 71,
+     "sim": 0.3584
+    },
+    {
+     "i": 5,
+     "sim": 0.3325
+    },
+    {
+     "i": 54,
+     "sim": 0.3297
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-012",
+   "x": 68.956,
+   "y": -4.584,
+   "z": -69.645,
+   "tx": 52.89,
+   "ty": 15.175,
+   "tz": -82.338,
+   "cluster": 2,
+   "department": "Orthopaedics",
+   "severity": 5,
+   "date": "2025-10-03",
+   "summary": "Methotrexate prescribed daily rather than weekly on discharge summary. Community pharmacy queried it; the query went to a shared inbox nobody owned. Pancytopenia at 2 weeks.",
+   "nearest": [
+    {
+     "i": 41,
+     "sim": 0.4074
+    },
+    {
+     "i": 62,
+     "sim": 0.3781
+    },
+    {
+     "i": 48,
+     "sim": 0.3406
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-029",
+   "x": -17.131,
+   "y": 31.461,
+   "z": -22.943,
+   "tx": -18.527,
+   "ty": 13.217,
+   "tz": -8.489,
+   "cluster": 1,
+   "department": "Oncology",
+   "severity": 3,
+   "date": "2025-10-03",
+   "summary": "Antenatal reduced fetal movements — third presentation in a week, CTG each time, no growth scan arranged until the fourth attendance.",
+   "nearest": [
+    {
+     "i": 80,
+     "sim": 0.3841
+    },
+    {
+     "i": 76,
+     "sim": 0.2961
+    },
+    {
+     "i": 13,
+     "sim": 0.2927
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-062",
+   "x": -4.698,
+   "y": 33.808,
+   "z": -29.214,
+   "tx": -2.729,
+   "ty": 16.199,
+   "tz": -16.457,
+   "cluster": 1,
+   "department": "Emergency Department",
+   "severity": 1,
+   "date": "2025-10-04",
+   "summary": "Cauda equina symptoms present on the initial ED note; MRI requested as routine rather than emergency. Scanned 26 hours later, decompressed late.",
+   "nearest": [
+    {
+     "i": 21,
+     "sim": 0.4615
+    },
+    {
+     "i": 55,
+     "sim": 0.4167
+    },
+    {
+     "i": 26,
+     "sim": 0.398
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-027",
+   "x": 20.33,
+   "y": 32.122,
+   "z": -25.752,
+   "tx": 29.073,
+   "ty": 14.058,
+   "tz": -12.058,
+   "cluster": 1,
+   "department": "Emergency Department",
+   "severity": 2,
+   "date": "2025-10-05",
+   "summary": "Pt with new confusion in a care home was managed as delirium for 4 days before glucose was checked. HHS on presentation to ED.",
+   "nearest": [
+    {
+     "i": 18,
+     "sim": 0.4652
+    },
+    {
+     "i": 13,
+     "sim": 0.4383
+    },
+    {
+     "i": 26,
+     "sim": 0.422
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-014",
+   "x": 25.398,
+   "y": 61.872,
+   "z": 32.188,
+   "tx": 21.06,
+   "ty": 61.46,
+   "tz": 13.856,
+   "cluster": 0,
+   "department": "Orthopaedics",
+   "severity": 4,
+   "date": "2025-10-07",
+   "summary": "Pt moved bed four times in 36 hours for flow reasons. The team lost track; ward round missed them entirely on day 2.",
+   "nearest": [
+    {
+     "i": 13,
+     "sim": 0.4049
+    },
+    {
+     "i": 12,
+     "sim": 0.4026
+    },
+    {
+     "i": 84,
+     "sim": 0.3986
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-005",
+   "x": -86.706,
+   "y": -13.864,
+   "z": 20.926,
+   "tx": -72.464,
+   "ty": -5.097,
+   "tz": 22.939,
+   "cluster": 4,
+   "department": "Orthopaedics",
+   "severity": 4,
+   "date": "2025-10-08",
+   "summary": "Nerve injury — common peroneal palsy following prolonged lithotomy positioning for a 6-hour pelvic case. Positioning checks not repeated after the 2-hour mark.",
+   "nearest": [
+    {
+     "i": 4,
+     "sim": 0.4145
+    },
+    {
+     "i": 50,
+     "sim": 0.4096
+    },
+    {
+     "i": 86,
+     "sim": 0.3965
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-021",
+   "x": -8.36,
+   "y": -4.811,
+   "z": 57.366,
+   "tx": -21.834,
+   "ty": -23.27,
+   "tz": 45.848,
+   "cluster": 0,
+   "department": "Paediatrics",
+   "severity": 5,
+   "date": "2025-10-09",
+   "summary": "Bair-hugger and forced-air units in short supply meant a case proceeded without warming; core temp 34.6 at end of surgery, prolonged recovery stay.",
+   "nearest": [
+    {
+     "i": 90,
+     "sim": 0.4572
+    },
+    {
+     "i": 94,
+     "sim": 0.4402
+    },
+    {
+     "i": 18,
+     "sim": 0.4022
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-051",
+   "x": -67.369,
+   "y": -37.698,
+   "z": 11.345,
+   "tx": -47.894,
+   "ty": -35.382,
+   "tz": 10.766,
+   "cluster": 4,
+   "department": "General Surgery",
+   "severity": 5,
+   "date": "2025-10-09",
+   "summary": "Massive transfusion triggered in a placenta accreta case where accreta was not anticipated antenatally. Hysterectomy performed, mother survived.",
+   "nearest": [
+    {
+     "i": 74,
+     "sim": 0.3841
+    },
+    {
+     "i": 67,
+     "sim": 0.3415
+    },
+    {
+     "i": 25,
+     "sim": 0.3324
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-077",
+   "x": 30.811,
+   "y": 41.962,
+   "z": -47.612,
+   "tx": 42.39,
+   "ty": 26.56,
+   "tz": -39.834,
+   "cluster": 1,
+   "department": "Orthopaedics",
+   "severity": 3,
+   "date": "2025-10-11",
+   "summary": "PE diagnosis delayed by a negative d-dimer used outside its intended pre-test-probability band. CTPA eventually positive with clot burden.",
+   "nearest": [
+    {
+     "i": 55,
+     "sim": 0.422
+    },
+    {
+     "i": 22,
+     "sim": 0.4094
+    },
+    {
+     "i": 36,
+     "sim": 0.3999
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-050",
+   "x": -26.865,
+   "y": 49.577,
+   "z": -61.013,
+   "tx": -30.896,
+   "ty": 36.237,
+   "tz": -56.862,
+   "cluster": 1,
+   "department": "Acute Medicine",
+   "severity": 1,
+   "date": "2025-10-14",
+   "summary": "Radiology discrepancy meeting picked up a missed lung apex opacity on an ED chest film from 5 months prior. Interval growth on the staging scan.",
+   "nearest": [
+    {
+     "i": 32,
+     "sim": 0.5884
+    },
+    {
+     "i": 55,
+     "sim": 0.5407
+    },
+    {
+     "i": 42,
+     "sim": 0.458
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-079",
+   "x": -65.713,
+   "y": 1.171,
+   "z": -19.886,
+   "tx": -45.789,
+   "ty": 14.007,
+   "tz": -28.917,
+   "cluster": 4,
+   "department": "Orthopaedics",
+   "severity": 5,
+   "date": "2025-10-16",
+   "summary": "Retained swab identified on post-op CXR after emergency laparotomy. Count had been declared correct; count was performed during an unplanned staff swap mid-case.",
+   "nearest": [
+    {
+     "i": 42,
+     "sim": 0.5206
+    },
+    {
+     "i": 25,
+     "sim": 0.5019
+    },
+    {
+     "i": 84,
+     "sim": 0.4438
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-057",
+   "x": 2.998,
+   "y": 85.11,
+   "z": -42.042,
+   "tx": 7.05,
+   "ty": 81.386,
+   "tz": -32.756,
+   "cluster": 1,
+   "department": "Anaesthetics",
+   "severity": 2,
+   "date": "2025-10-17",
+   "summary": "Night handover was verbal only, no written list. Pt awaiting urgent CT head was not mentioned. Scan happened 9 hours later than intended.",
+   "nearest": [
+    {
+     "i": 26,
+     "sim": 0.5637
+    },
+    {
+     "i": 55,
+     "sim": 0.5632
+    },
+    {
+     "i": 59,
+     "sim": 0.5293
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-089",
+   "x": 85.735,
+   "y": -29.494,
+   "z": -16.667,
+   "tx": 74.211,
+   "ty": -16.476,
+   "tz": -15.024,
+   "cluster": 2,
+   "department": "General Surgery",
+   "severity": 2,
+   "date": "2025-10-20",
+   "summary": "Wrong-patient prescribing — two pts with same surname on the same bay, drug chart opened on the wrong record. Antihypertensive given to a normotensive pt, symptomatic hypotension.",
+   "nearest": [
+    {
+     "i": 22,
+     "sim": 0.4841
+    },
+    {
+     "i": 8,
+     "sim": 0.4764
+    },
+    {
+     "i": 21,
+     "sim": 0.4445
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-073",
+   "x": -92.211,
+   "y": -27.982,
+   "z": 2.412,
+   "tx": -79.458,
+   "ty": -23.037,
+   "tz": -0.585,
+   "cluster": 4,
+   "department": "Acute Medicine",
+   "severity": 1,
+   "date": "2025-10-21",
+   "summary": "Ureteric injury during total abdominal hysterectomy for a large fibroid uterus. Recognised intraoperatively, urology stented. Pre-op imaging had shown deviation.",
+   "nearest": [
+    {
+     "i": 78,
+     "sim": 0.3965
+    },
+    {
+     "i": 80,
+     "sim": 0.3269
+    },
+    {
+     "i": 42,
+     "sim": 0.313
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-001",
+   "x": 2.19,
+   "y": 13.856,
+   "z": -61.585,
+   "tx": 17.161,
+   "ty": 14.601,
+   "tz": -55.677,
+   "cluster": 3,
+   "department": "Obstetrics & Gynaecology",
+   "severity": 2,
+   "date": "2025-10-23",
+   "summary": "Sepsis six not completed within the hour. Antibiotics given at 3h40 from triage. Recognition was prompt, the delay was entirely in drug availability and access.",
+   "nearest": [
+    {
+     "i": 41,
+     "sim": 0.5202
+    },
+    {
+     "i": 68,
+     "sim": 0.4904
+    },
+    {
+     "i": 52,
+     "sim": 0.4466
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-025",
+   "x": 15.331,
+   "y": 2.925,
+   "z": -50.622,
+   "tx": 33.858,
+   "ty": 0.711,
+   "tz": -41.747,
+   "cluster": 3,
+   "department": "Acute Medicine",
+   "severity": 1,
+   "date": "2025-10-23",
+   "summary": "Positive blood culture flagged in the lab at 1400; result acknowledged at 0900 the next day. Endocarditis diagnosis delayed by a full day.",
+   "nearest": [
+    {
+     "i": 87,
+     "sim": 0.4178
+    },
+    {
+     "i": 41,
+     "sim": 0.3604
+    },
+    {
+     "i": 66,
+     "sim": 0.3513
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-066",
+   "x": -77.277,
+   "y": 17.572,
+   "z": 45.295,
+   "tx": -60.484,
+   "ty": 34.846,
+   "tz": 53.904,
+   "cluster": 4,
+   "department": "Intensive Care",
+   "severity": 3,
+   "date": "2025-10-24",
+   "summary": "Theatre lights failed during a laparoscopic case; generator switchover took 40 seconds. Case completed with headlamps, no harm.",
+   "nearest": [
+    {
+     "i": 78,
+     "sim": 0.3569
+    },
+    {
+     "i": 52,
+     "sim": 0.3449
+    },
+    {
+     "i": 51,
+     "sim": 0.3285
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-041",
+   "x": 13.559,
+   "y": 14.841,
+   "z": 58.295,
+   "tx": 6.017,
+   "ty": 1.701,
+   "tz": 47.029,
+   "cluster": 0,
+   "department": "Oncology",
+   "severity": 3,
+   "date": "2025-10-25",
+   "summary": "Handover of the ventilator circuit to biomed for servicing left the unit one machine short overnight; a second admission had to be diverted.",
+   "nearest": [
+    {
+     "i": 44,
+     "sim": 0.4772
+    },
+    {
+     "i": 49,
+     "sim": 0.4591
+    },
+    {
+     "i": 79,
+     "sim": 0.4572
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-059",
+   "x": -96.043,
+   "y": -55.719,
+   "z": -1.81,
+   "tx": -84.328,
+   "ty": -58.28,
+   "tz": -5.949,
+   "cluster": 4,
+   "department": "Paediatrics",
+   "severity": 1,
+   "date": "2025-10-29",
+   "summary": "Intraoperative haemorrhage from splenic capsular tear during a left hemicolectomy. 4 units transfused. Splenectomy avoided with haemostatic agent.",
+   "nearest": [
+    {
+     "i": 70,
+     "sim": 0.4293
+    },
+    {
+     "i": 60,
+     "sim": 0.3804
+    },
+    {
+     "i": 98,
+     "sim": 0.3364
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-035",
+   "x": 66.386,
+   "y": -9.064,
+   "z": -0.328,
+   "tx": 49.626,
+   "ty": 9.482,
+   "tz": 5.738,
+   "cluster": 2,
+   "department": "Paediatrics",
+   "severity": 2,
+   "date": "2025-11-03",
+   "summary": "Contrast given despite documented severe iodinated contrast reaction. The reaction was recorded in a scanned letter, not in the structured allergy list.",
+   "nearest": [
+    {
+     "i": 31,
+     "sim": 0.4751
+    },
+    {
+     "i": 49,
+     "sim": 0.4475
+    },
+    {
+     "i": 36,
+     "sim": 0.33
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-022",
+   "x": -69.131,
+   "y": 19.311,
+   "z": -57.528,
+   "tx": -73.462,
+   "ty": 21.532,
+   "tz": -50.522,
+   "cluster": 3,
+   "department": "Obstetrics & Gynaecology",
+   "severity": 3,
+   "date": "2025-11-08",
+   "summary": "Fractured neck of femur waited 62 hours for surgery against a 36-hour standard. Delay was anticoagulation reversal plus two consecutive list cancellations.",
+   "nearest": [
+    {
+     "i": 52,
+     "sim": 0.4353
+    },
+    {
+     "i": 26,
+     "sim": 0.4087
+    },
+    {
+     "i": 87,
+     "sim": 0.4059
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-037",
+   "x": 17.096,
+   "y": 33.56,
+   "z": 88.337,
+   "tx": 10.511,
+   "ty": 25.486,
+   "tz": 85.202,
+   "cluster": 0,
+   "department": "General Surgery",
+   "severity": 2,
+   "date": "2025-11-25",
+   "summary": "Warming blanket thermostat fault caused a contact burn on the flank during a long case. Device had passed PPM two weeks earlier.",
+   "nearest": [
+    {
+     "i": 53,
+     "sim": 0.4439
+    },
+    {
+     "i": 49,
+     "sim": 0.4419
+    },
+    {
+     "i": 79,
+     "sim": 0.4402
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-003",
+   "x": 68.554,
+   "y": -34.74,
+   "z": -49.85,
+   "tx": 52.38,
+   "ty": -23.143,
+   "tz": -57.187,
+   "cluster": 2,
+   "department": "Anaesthetics",
+   "severity": 2,
+   "date": "2025-12-01",
+   "summary": "Warfarin dose miscalculated on discharge TTO. INR 8.2 at community check 4 days later. No bleeding but readmitted for vitamin K.",
+   "nearest": [
+    {
+     "i": 62,
+     "sim": 0.4349
+    },
+    {
+     "i": 66,
+     "sim": 0.4288
+    },
+    {
+     "i": 63,
+     "sim": 0.4054
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-078",
+   "x": -67.103,
+   "y": -36.544,
+   "z": -9.299,
+   "tx": -47.555,
+   "ty": -33.916,
+   "tz": -15.466,
+   "cluster": 4,
+   "department": "Paediatrics",
+   "severity": 1,
+   "date": "2025-12-06",
+   "summary": "Vascular graft thrombosis at 48h post fem-pop bypass. Urgent thrombectomy. Antiplatelet had been withheld for an unrelated planned dental extraction.",
+   "nearest": [
+    {
+     "i": 93,
+     "sim": 0.3474
+    },
+    {
+     "i": 66,
+     "sim": 0.3283
+    },
+    {
+     "i": 51,
+     "sim": 0.2983
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-068",
+   "x": 14.408,
+   "y": 58.207,
+   "z": 54.634,
+   "tx": 7.096,
+   "ty": 56.803,
+   "tz": 42.377,
+   "cluster": 0,
+   "department": "Oncology",
+   "severity": 3,
+   "date": "2025-12-08",
+   "summary": "Family raised a concern about reduced responsiveness directly to a passing porter; the concern never entered any clinical record. No Martha's-Rule style route existed.",
+   "nearest": [
+    {
+     "i": 20,
+     "sim": 0.3462
+    },
+    {
+     "i": 65,
+     "sim": 0.3316
+    },
+    {
+     "i": 37,
+     "sim": 0.3205
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-031",
+   "x": -91.196,
+   "y": -42.465,
+   "z": -0.564,
+   "tx": -78.169,
+   "ty": -41.44,
+   "tz": -4.366,
+   "cluster": 4,
+   "department": "Intensive Care",
+   "severity": 4,
+   "date": "2025-12-25",
+   "summary": "Anastomotic leak POD4 following anterior resection. Return to theatre, defunctioning stoma formed. Leak rate for this procedure remains within unit benchmark.",
+   "nearest": [
+    {
+     "i": 60,
+     "sim": 0.3842
+    },
+    {
+     "i": 52,
+     "sim": 0.3693
+    },
+    {
+     "i": 25,
+     "sim": 0.3675
+    }
+   ]
+  },
+  {
+   "id": "MM-2025-090",
+   "x": 45.699,
+   "y": 16.162,
+   "z": 40.91,
+   "tx": 46.855,
+   "ty": 3.38,
+   "tz": 24.939,
+   "cluster": 0,
+   "department": "Emergency Department",
+   "severity": 3,
+   "date": "2025-12-25",
+   "summary": "Nasogastric tube pH paper stock had been discontinued by procurement without notifying wards. Placement confirmed by auscultation, a banned practice.",
+   "nearest": [
+    {
+     "i": 45,
+     "sim": 0.3786
+    },
+    {
+     "i": 14,
+     "sim": 0.3041
+    },
+    {
+     "i": 56,
+     "sim": 0.2905
+    }
+   ]
+  }
+ ]
+}
+    </script>
+    <!-- MM_PAYLOAD_END -->
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const CANVAS_COLOR = 0x1E2A32;
+        const HOME = new THREE.Vector3(150, 90, 190);
+        const loaderEl = document.getElementById('loader');
+
+        /* ---------------------------------------------------------------
+           Payload: prefer the block injected by engine.py (works over
+           file://), fall back to fetching data.json when served over http.
+           --------------------------------------------------------------- */
+        async function loadPayload() {
+            const raw = document.getElementById('mm-payload').textContent.trim();
+            if (raw && raw !== 'null') {
+                try { return JSON.parse(raw); } catch (e) { /* fall through to fetch */ }
+            }
+            const res = await fetch('data.json');
+            if (!res.ok) throw new Error(`data.json returned ${res.status}`);
+            return res.json();
+        }
+
+        function fail(message) {
+            loaderEl.innerHTML =
+                `<div class="err"><strong>No galaxy to render.</strong><br>${message}<br><br>` +
+                `Run <code>python data_generator.py</code> then <code>python engine.py</code>, ` +
+                `and reload this page.</div>`;
+        }
+
+        /* --------------------------------------------------------------- */
+
+        let data;
+        try {
+            data = await loadPayload();
+        } catch (err) {
+            fail(err.message);
+            throw err;
+        }
+        if (!data || !Array.isArray(data.points) || data.points.length === 0) {
+            fail('The payload is empty.');
+            throw new Error('empty payload');
+        }
+
+        const points = data.points;
+        const clusters = data.clusters;
+
+        /* ---------------- Scene ---------------- */
+
+        const canvas = document.getElementById('stage');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setClearColor(CANVAS_COLOR, 1);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.5, 3000);
+        camera.position.copy(HOME);
+
+        const controls = new OrbitControls(camera, canvas);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.minDistance = 40;
+        controls.maxDistance = 700;
+        controls.target.set(0, 0, 0);
+
+        const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        controls.autoRotate = !reduceMotion;
+        controls.autoRotateSpeed = 0.32;
+
+        /* ---------------- Glow sprite (generated, no external asset) ---------------- */
+
+        function glowTexture() {
+            const size = 128;
+            const c = document.createElement('canvas');
+            c.width = c.height = size;
+            const ctx = c.getContext('2d');
+            const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+            g.addColorStop(0.00, 'rgba(255,255,255,1)');
+            g.addColorStop(0.18, 'rgba(255,255,255,0.92)');
+            g.addColorStop(0.42, 'rgba(255,255,255,0.34)');
+            g.addColorStop(1.00, 'rgba(255,255,255,0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, size, size);
+            const tex = new THREE.CanvasTexture(c);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            return tex;
+        }
+        const sprite = glowTexture();
+
+        /* ---------------- Ambient starfield (parallax reference) ---------------- */
+
+        (function ambient() {
+            const N = 1400;
+            const pos = new Float32Array(N * 3);
+            for (let i = 0; i < N; i++) {
+                const r = 400 + Math.random() * 500;
+                const t = Math.random() * Math.PI * 2;
+                const p = Math.acos(2 * Math.random() - 1);
+                pos[i * 3] = r * Math.sin(p) * Math.cos(t);
+                pos[i * 3 + 1] = r * Math.sin(p) * Math.sin(t);
+                pos[i * 3 + 2] = r * Math.cos(p);
+            }
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+                color: 0xFDFBF7, size: 1.5, sizeAttenuation: true,
+                transparent: true, opacity: 0.28, depthWrite: false,
+                map: sprite, blending: THREE.AdditiveBlending
+            })));
+        })();
+
+        /* ---------------- Case stars ---------------- */
+
+        const n = points.length;
+        const positions = new Float32Array(n * 3);
+        const colors = new Float32Array(n * 3);
+        const sizes = new Float32Array(n);
+        const baseSizes = new Float32Array(n);
+        const dim = new Float32Array(n);
+
+        // Two coordinate sets. `amplified` is what makes the galaxies legible;
+        // `truth` is the raw projection with nothing added. The canvas morphs
+        // between them so the amplification is never taken on trust.
+        const amplified = new Float32Array(n * 3);
+        const truth = new Float32Array(n * 3);
+
+        const clusterColor = new Map(clusters.map(c => [c.id, new THREE.Color(c.color)]));
+
+        points.forEach((p, i) => {
+            amplified[i * 3] = p.x;
+            amplified[i * 3 + 1] = p.y;
+            amplified[i * 3 + 2] = p.z;
+            // Older payloads carry only one coordinate set; fall back to it.
+            truth[i * 3] = p.tx ?? p.x;
+            truth[i * 3 + 1] = p.ty ?? p.y;
+            truth[i * 3 + 2] = p.tz ?? p.z;
+            positions[i * 3] = amplified[i * 3];
+            positions[i * 3 + 1] = amplified[i * 3 + 1];
+            positions[i * 3 + 2] = amplified[i * 3 + 2];
+            const col = clusterColor.get(p.cluster) || new THREE.Color(0xFDFBF7);
+            colors[i * 3] = col.r;
+            colors[i * 3 + 1] = col.g;
+            colors[i * 3 + 2] = col.b;
+            // Severity -> physical radius. See SPECIFICATION.md 4.3.
+            baseSizes[i] = 6 + p.severity * 2.2;
+            sizes[i] = baseSizes[i];
+            dim[i] = 1;
+        });
+
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+        geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+        geo.setAttribute('aDim', new THREE.BufferAttribute(dim, 1));
+
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                uMap: { value: sprite },
+                uFogDensity: { value: 0.0022 }
+            },
+            vertexShader: `
+                attribute vec3 aColor;
+                attribute float aSize;
+                attribute float aDim;
+                varying vec3 vColor;
+                varying float vDim;
+                varying float vDepth;
+                void main() {
+                    vColor = aColor;
+                    vDim = aDim;
+                    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                    vDepth = -mv.z;
+                    gl_PointSize = aSize * (320.0 / max(vDepth, 0.001));
+                    gl_Position = projectionMatrix * mv;
+                }`,
+            fragmentShader: `
+                uniform sampler2D uMap;
+                uniform float uFogDensity;
+                varying vec3 vColor;
+                varying float vDim;
+                varying float vDepth;
+                void main() {
+                    float a = texture2D(uMap, gl_PointCoord).a;
+                    // Exponential-squared depth falloff: distant stars recede into
+                    // the canvas instead of stacking into a bright wall.
+                    float f = 1.0 - exp(-uFogDensity * uFogDensity * vDepth * vDepth);
+                    a *= vDim * (1.0 - f);
+                    if (a < 0.01) discard;
+                    gl_FragColor = vec4(vColor, a);
+                }`,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+
+        const stars = new THREE.Points(geo, material);
+        scene.add(stars);
+
+        /* ---------------- HUD ---------------- */
+
+        document.getElementById('stat-cases').textContent = data.meta.n_cases;
+        document.getElementById('stat-clusters').textContent = data.meta.n_clusters;
+        document.getElementById('stat-dims').textContent = data.meta.embedding_dim;
+        document.getElementById('stat-proj').textContent =
+            (data.meta.projection || '—').toUpperCase();
+        document.getElementById('stat-var').textContent =
+            data.meta.variance_retained == null
+                ? 'n/a'
+                : Math.round(data.meta.variance_retained * 100) + '%';
+
+        /* ---------------- Geometry: amplified vs true ----------------
+           The separation transform is a legibility device, so the page states that
+           in plain language and lets the reader switch it off entirely. */
+
+        const gain = data.meta.separation_gain ?? 1;
+        const varPct = data.meta.variance_retained == null
+            ? null : Math.round(data.meta.variance_retained * 100);
+
+        const caveatEl = document.getElementById('geo-caveat');
+        const CAVEAT = {
+            amplified:
+                `Galaxies are pushed <b>${gain.toFixed(2)}×</b> further apart than the ` +
+                `projection puts them, so they read as distinct. Shape <i>within</i> a ` +
+                `galaxy is untouched — but the <b>gaps between them are not measured ` +
+                `distances</b>. Switch to True to see the projection unamplified.`,
+            true:
+                `Raw projection, nothing added.` +
+                (varPct === null ? '' :
+                    ` Only <b>${varPct}%</b> of the embedding variance survives the squash ` +
+                    `to three axes, so proximity here is a hint, not proof.`) +
+                ` The measured figures are the cosine similarities on each case card.`
+        };
+
+        let geoTarget = 0;   // 0 = amplified, 1 = true
+        let geoCurrent = 0;
+        // Assigned once the case card exists, so switching geometry re-renders the
+        // coordinates on a pinned card. Kept as a hook to avoid a TDZ on init.
+        let geoOnChange = null;
+
+        const geoAmp = document.getElementById('geo-amp');
+        const geoTrue = document.getElementById('geo-true');
+
+        function setGeometry(toTrue) {
+            geoTarget = toTrue ? 1 : 0;
+            geoAmp.classList.toggle('is-on', !toTrue);
+            geoTrue.classList.toggle('is-on', toTrue);
+            geoAmp.setAttribute('aria-checked', String(!toTrue));
+            geoTrue.setAttribute('aria-checked', String(toTrue));
+            caveatEl.innerHTML = toTrue ? CAVEAT.true : CAVEAT.amplified;
+            if (geoOnChange) geoOnChange();
+        }
+        geoAmp.addEventListener('click', () => setGeometry(false));
+        geoTrue.addEventListener('click', () => setGeometry(true));
+        setGeometry(false);
+
+        const legendBox = document.getElementById('legend-items');
+        let isolated = null;
+
+        clusters.forEach(c => {
+            const b = document.createElement('button');
+            b.className = 'galaxy';
+            b.type = 'button';
+            b.setAttribute('aria-pressed', 'true');
+            // Cohesion is measured, so it is stated as a number rather than implied
+            // by how tight the galaxy happens to look after amplification.
+            const cohesion = c.cohesion == null ? '' :
+                ` · cohesion ${c.cohesion.toFixed(2)}`;
+            const adjacent = c.nearest_similarity == null ? '' :
+                `<span class="galaxy-adj">nearest galaxy ` +
+                `${c.nearest_similarity.toFixed(2)} similar</span>`;
+            b.innerHTML =
+                `<span class="swatch" style="color:${c.color}"></span>` +
+                `<span><span class="galaxy-name">${c.label}</span>` +
+                `<span class="galaxy-count">${c.size} cases${cohesion}</span>` +
+                adjacent + `</span>`;
+            b.addEventListener('click', () => {
+                isolated = (isolated === c.id) ? null : c.id;
+                applyIsolation();
+            });
+            legendBox.appendChild(b);
+        });
+
+        function applyIsolation() {
+            const buttons = [...legendBox.querySelectorAll('.galaxy')];
+            clusters.forEach((c, idx) => {
+                buttons[idx].setAttribute(
+                    'aria-pressed', String(isolated === null || isolated === c.id)
+                );
+            });
+            for (let i = 0; i < n; i++) {
+                dim[i] = (isolated === null || points[i].cluster === isolated) ? 1 : 0.08;
+            }
+            geo.attributes.aDim.needsUpdate = true;
+        }
+
+        // Ctrl-F / screen-reader fallback copy of the payload.
+        const a11y = document.getElementById('a11y-list');
+        a11y.innerHTML = points.map(p =>
+            `<li>${p.id} — ${p.department} — severity ${p.severity} — ${p.summary}</li>`
+        ).join('');
+
+        /* ---------------- Case card ---------------- */
+
+        const caseEl = document.getElementById('case');
+        const el = {
+            id: document.getElementById('case-id'),
+            date: document.getElementById('case-date'),
+            cluster: document.getElementById('case-cluster'),
+            summary: document.getElementById('case-summary'),
+            dept: document.getElementById('case-dept'),
+            sev: document.getElementById('case-sev'),
+            xyz: document.getElementById('case-xyz'),
+            pin: document.getElementById('case-pin')
+        };
+        const nnList = document.getElementById('nn-list');
+
+        let pinned = null;
+
+        function showCase(i, isPinned) {
+            const p = points[i];
+            const c = clusters.find(c => c.id === p.cluster) || { label: '—', color: '#FDFBF7' };
+            el.id.textContent = p.id;
+            el.date.textContent = p.date;
+            el.cluster.innerHTML =
+                `<span class="swatch" style="color:${c.color};margin-top:0"></span>${c.label}`;
+            el.summary.textContent = p.summary;
+            el.dept.textContent = p.department;
+            el.sev.textContent = '●'.repeat(p.severity) + '○'.repeat(5 - p.severity);
+            const showTrue = geoTarget === 1;
+            const cx = showTrue ? (p.tx ?? p.x) : p.x;
+            const cy = showTrue ? (p.ty ?? p.y) : p.y;
+            const cz = showTrue ? (p.tz ?? p.z) : p.z;
+            el.xyz.textContent =
+                `${cx.toFixed(1)}, ${cy.toFixed(1)}, ${cz.toFixed(1)} ` +
+                `(${showTrue ? 'true' : 'amplified'})`;
+
+            // Measured nearest neighbours, straight from the 384-d space.
+            nnList.innerHTML = (p.nearest || []).map(nb => {
+                const q = points[nb.i];
+                if (!q) return '';
+                const qc = clusters.find(c => c.id === q.cluster) || { color: '#FDFBF7' };
+                const crossed = q.cluster !== p.cluster
+                    ? '<span class="nn-cross">different galaxy</span>' : '';
+                return `<li><button type="button" class="nn" data-i="${nb.i}">` +
+                    `<span class="nn-sim">${nb.sim.toFixed(2)}</span>` +
+                    `<span class="swatch nn-dot" style="color:${qc.color}"></span>` +
+                    `<span class="nn-text">${q.id} · ${q.department}${crossed}</span>` +
+                    `</button></li>`;
+            }).join('');
+
+            el.pin.textContent = isPinned ? 'Pinned — click empty space to release' : '';
+            caseEl.classList.add('visible');
+        }
+
+        // Jumping to a neighbour is how you check the engine's work: two cases with no
+        // shared keywords should still land next to each other.
+        nnList.addEventListener('click', e => {
+            const btn = e.target.closest('.nn');
+            if (!btn) return;
+            const i = Number(btn.dataset.i);
+            pinned = i;
+            controls.autoRotate = false;
+            flyTo(i);
+            showCase(i, true);
+        });
+
+        function flyTo(i) {
+            const t = new THREE.Vector3(
+                positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]
+            );
+            flight = { from: controls.target.clone(), to: t, t: 0 };
+        }
+        let flight = null;
+
+        geoOnChange = () => { if (pinned !== null) showCase(pinned, true); };
+
+        function hideCase() {
+            if (pinned === null) caseEl.classList.remove('visible');
+        }
+
+        /* ---------------- Picking ---------------- */
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.params.Points.threshold = 5;
+        const pointer = new THREE.Vector2();
+        let hovered = null;
+        let pointerInside = false;
+
+        function pick() {
+            if (!pointerInside) return null;
+            // Scale the pick radius with camera distance, so a star stays as easy to
+            // hit when you are 500 units out as when you are inside the galaxy.
+            const dist = camera.position.distanceTo(controls.target);
+            raycaster.params.Points.threshold =
+                Math.min(14, Math.max(3, dist * 0.022));
+            raycaster.setFromCamera(pointer, camera);
+            const hits = raycaster.intersectObject(stars);
+            if (!hits.length) return null;
+            // Nearest hit that is not dimmed out by an active isolation filter.
+            const hit = hits.find(h => dim[h.index] > 0.5);
+            return hit ? hit.index : null;
+        }
+
+        function setHover(i) {
+            if (hovered === i) return;
+            if (hovered !== null) sizes[hovered] = baseSizes[hovered];
+            hovered = i;
+            if (hovered !== null) sizes[hovered] = baseSizes[hovered] * 2.1;
+            geo.attributes.aSize.needsUpdate = true;
+            canvas.style.cursor = hovered === null ? 'grab' : 'pointer';
+            if (hovered !== null) showCase(hovered, false);
+            else if (pinned !== null) showCase(pinned, true);
+            else hideCase();
+        }
+
+        function updatePointer(e) {
+            pointerInside = true;
+            pointer.x = (e.clientX / innerWidth) * 2 - 1;
+            pointer.y = -(e.clientY / innerHeight) * 2 + 1;
+        }
+        canvas.addEventListener('pointermove', updatePointer);
+        canvas.addEventListener('pointerleave', () => {
+            pointerInside = false;
+            setHover(null);
+        });
+
+        // Distinguish a click from the end of an orbit drag.
+        let downAt = null;
+        canvas.addEventListener('pointerdown', e => {
+            downAt = [e.clientX, e.clientY];
+            // Touch and pen never send a hover, so seed the ray from the press itself.
+            updatePointer(e);
+        });
+        canvas.addEventListener('pointerup', e => {
+            if (!downAt) return;
+            updatePointer(e);
+            const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]);
+            downAt = null;
+            if (moved > 4) return;
+            const i = pick();
+            if (i !== null) {
+                pinned = i;
+                controls.autoRotate = false;
+                showCase(i, true);
+            } else {
+                pinned = null;
+                caseEl.classList.remove('visible');
+            }
+        });
+
+        addEventListener('keydown', e => {
+            if (e.key === 'r' || e.key === 'R') {
+                flight = null;
+                camera.position.copy(HOME);
+                controls.target.set(0, 0, 0);
+                controls.update();
+            }
+        });
+
+        addEventListener('resize', () => {
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(innerWidth, innerHeight);
+        });
+
+        /* ---------------- Loop ---------------- */
+
+        function frame() {
+            requestAnimationFrame(frame);
+
+            // Morph between the amplified and true coordinate sets. Animating rather
+            // than cutting means you can see exactly which galaxies were pushed apart
+            // and by how much.
+            if (Math.abs(geoCurrent - geoTarget) > 0.0005) {
+                geoCurrent += (geoTarget - geoCurrent) * 0.08;
+                for (let j = 0; j < n * 3; j++) {
+                    positions[j] = amplified[j] + (truth[j] - amplified[j]) * geoCurrent;
+                }
+                geo.attributes.position.needsUpdate = true;
+                geo.computeBoundingSphere();
+            }
+
+            if (flight) {
+                flight.t = Math.min(1, flight.t + 0.045);
+                const e = 1 - Math.pow(1 - flight.t, 3);
+                controls.target.lerpVectors(flight.from, flight.to, e);
+                if (flight.t >= 1) flight = null;
+            }
+
+            setHover(pick());
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        frame();
+
+        loaderEl.classList.add('gone');
+        canvas.style.cursor = 'grab';
+    </script>
+
+</body>
+
+</html>
