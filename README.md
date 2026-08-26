@@ -25,6 +25,8 @@ Everything runs on a laptop. No API keys. No cloud inference. No PHI leaves the 
 | Labelling | `sklearn` TF-IDF top-terms per cluster | names each galaxy from its own distinctive vocabulary |
 | Projection | `umap-learn` if present, else `sklearn` PCA | 384-d → x, y, z |
 | Render | Three.js r160 via CDN ESM | zero build step, single static folder |
+| Workbench | `serve.py`, stdlib `http.server` only | drop a register on the page; nothing to install, ~200 lines an IG team can read |
+| Brand | `app/assets/brand.css`, typefaces inlined as base64 | no font request; renders identically on an air-gapped machine |
 | Promo | `matplotlib` + `imageio` | headless-renderable GIF/MP4 for social |
 | Tests | `pytest` | geometry and payload contracts |
 
@@ -49,13 +51,26 @@ python data_generator.py
 ```
 
 ```bash
-python engine.py
+python serve.py
 ```
 
-Then open `app/index.html` in a browser — it works straight off the filesystem, because
-`engine.py` injects the payload directly into the page.
+That builds the demo galaxy if there isn't one and opens the workbench at
+http://127.0.0.1:8000. From there you can drop your own register onto the page.
 
 On macOS/Linux the activate step is `source venv/bin/activate`.
+
+**Two ways to run it**
+
+| | Workbench — `python serve.py` | Static — `python engine.py` |
+|---|---|---|
+| Upload a register from the page | yes | no |
+| Needs Python running | yes | only to build |
+| Output | live at `127.0.0.1:8000` | `app/standalone.html`, opens from disk |
+| Good for | using it | sending it to someone, GitHub Pages |
+
+The workbench binds to `127.0.0.1` — this machine only. Nothing is ever sent anywhere;
+the upload endpoint writes to a local scratch folder and runs the same `engine.py`
+pipeline the CLI runs.
 
 ---
 
@@ -71,7 +86,8 @@ On macOS/Linux the activate step is `source venv/bin/activate`.
 | `python marketing/generate_promo_viz.py --mp4` | render `marketing/visual_preview.gif` (and `.mp4`) for LinkedIn |
 | `pytest -q` | full contract suite |
 | `pytest -q -m "not slow"` | skip the test that needs the MiniLM weights |
-| `python -m http.server -d app 8000` | optional: serve the canvas at `http://localhost:8000` |
+| `python serve.py` | the workbench: serve the canvas and accept register uploads from the page |
+| `python serve.py --port 9000 --no-browser` | same, on another port, without opening a browser |
 
 First run of `engine.py` downloads the MiniLM weights (~90 MB) into the HuggingFace cache.
 Every run after that is fully offline.
@@ -130,6 +146,17 @@ your row count, the engine reduces it rather than failing.
 | A diffuse galaxy | varied one-offs |
 | A star drifting between two galaxies | a case that failed in two ways at once — usually the most instructive one in the room |
 | A big star | high severity (`Severity_Score` 4–5) |
+
+### Loading your own register from the page
+
+With `python serve.py` running, drop an `.xlsx` or `.csv` onto the **Case register**
+panel in the rail (or click it to browse). The page posts the file to the local
+endpoint, the pipeline re-runs, and the galaxy rebuilds — usually a few seconds for a
+few hundred cases. **Restore demo** puts the synthetic dataset back and deletes the
+uploaded copy.
+
+Opened as a bare `file://` page there is nothing to upload *to*, so the dropzone says so
+rather than failing silently. Embedding needs the model, and the model lives in Python.
 
 ### The control rail
 
@@ -204,10 +231,14 @@ mm-k-means-bert/
 ├── data_generator.py         synthetic 100-case M&M corpus
 ├── engine.py                 the pipeline compiler
 ├── mock_mm_minutes.xlsx      generated (git-ignored)
+├── serve.py                  local workbench (upload + rebuild from the page)
 ├── app/                      the static deliverable — deploy this folder alone
-│   ├── index.html            Three.js galaxy canvas
+│   ├── index.html            the app; tracked, ships with an empty payload
+│   ├── standalone.html       generated, payload inlined (git-ignored)
 │   ├── data.json             generated payload (git-ignored)
-│   └── assets/styles.css     mmonfar. brand system
+│   └── assets/
+│       ├── brand.css         canonical mmonfar. brand layer, fonts inlined
+│       └── styles.css        app layer, composes brand tokens only
 ├── marketing/
 │   ├── linkedin_post.txt
 │   ├── generate_promo_viz.py
@@ -223,6 +254,39 @@ mm-k-means-bert/
 
 Push the repo, then in **Settings → Pages** select the `main` branch and the `/app`
 folder (or push `app/` to a `gh-pages` branch). Nothing needs building.
+
+---
+
+## Where data can leak, and what stops it
+
+The realistic accident is: someone runs this on a real register, then commits.
+
+| Artefact | Contains case text? | Tracked? |
+|---|---|---|
+| `mock_mm_minutes.xlsx`, any `.xlsx`/`.csv` | yes | **no** — all tabular files are ignored |
+| `.uploads/` (registers dropped on the page) | yes | **no** |
+| `app/data.json` | yes | **no** |
+| `app/standalone.html` (payload inlined) | yes | **no** |
+| `app/index.html` | **no** — empty payload, fetches `data.json` | yes |
+| `engine.py`, `serve.py`, `tests/`, `SPECIFICATION.md`, `README.md` | no | yes |
+
+Two design decisions do the work:
+
+1. **The pipeline never writes into a tracked file.** `engine.py` injects the payload
+   into `app/standalone.html`, which is ignored, and leaves the tracked `app/index.html`
+   template untouched. `tests/test_pipeline.py::test_tracked_template_carries_no_case_data`
+   fails the build if that ever stops being true.
+2. **Every tabular format is ignored, with no exceptions** — including the synthetic
+   mock, which regenerates in about a second. A blanket rule is the only rule that
+   survives a real extract being dropped into the folder in a hurry.
+
+Tests, the spec, the README and the marketing copy stay tracked. They contain no case
+data, and the tests are the evidence that the claims in the README hold — removing them
+would remove the proof, not a risk.
+
+Two things this does *not* do: it has no de-identification stage, so registers must be
+de-identified upstream; and `--host` can bind the workbench beyond localhost, which
+prints a warning and should not be used with real data.
 
 ---
 

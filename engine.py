@@ -637,15 +637,24 @@ def build_payload(
     }
 
 
-def inject_into_html(payload: dict, html_path: Path) -> bool:
-    """Replace the payload block inside index.html so the page works over file://."""
-    if not html_path.exists():
-        print(f"      warn        : {html_path.name} not found, skipped injection")
+def inject_into_html(payload: dict, template_path: Path, out_path: Path) -> bool:
+    """Write a single-file copy of the page with the payload inlined.
+
+    SAFETY: this writes to `out_path` (app/standalone.html, git-ignored) and never
+    modifies the template. Injecting into the tracked index.html would embed every
+    case narrative into a source file — with a real register, that is patient data
+    committed to git history, and git history is difficult to retract. The template
+    stays clean and fetches data.json when served; the standalone copy exists only
+    so the page also works from a bare file:// URL, and is ignored by git for the
+    same reason data.json is.
+    """
+    if not template_path.exists():
+        print(f"      warn        : {template_path.name} not found, skipped standalone")
         return False
 
-    html = html_path.read_text(encoding="utf-8")
+    html = template_path.read_text(encoding="utf-8")
     if PAYLOAD_START not in html or PAYLOAD_END not in html:
-        print("      warn        : payload markers absent, skipped injection")
+        print("      warn        : payload markers absent, skipped standalone")
         return False
 
     block = (
@@ -658,7 +667,7 @@ def inject_into_html(payload: dict, html_path: Path) -> bool:
     pattern = re.compile(
         re.escape(PAYLOAD_START) + r".*?" + re.escape(PAYLOAD_END), re.DOTALL
     )
-    html_path.write_text(pattern.sub(lambda _: block, html, count=1), encoding="utf-8")
+    out_path.write_text(pattern.sub(lambda _: block, html, count=1), encoding="utf-8")
     return True
 
 
@@ -708,10 +717,11 @@ def run(
     APP_DIR.mkdir(parents=True, exist_ok=True)
     json_path = APP_DIR / "data.json"
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-    injected = inject_into_html(payload, APP_DIR / "index.html")
+    standalone = APP_DIR / "standalone.html"
+    injected = inject_into_html(payload, APP_DIR / "index.html", standalone)
 
     print(f"[5/5] emit        : {json_path.relative_to(ROOT)}"
-          + ("  + injected into app/index.html" if injected else ""))
+          + (f"  +  {standalone.relative_to(ROOT)}" if injected else ""))
     print("\n      galaxies discovered:")
     for c in clusters:
         print(f"        [{c['id']}] {c['size']:>3} cases  {c['label']}")

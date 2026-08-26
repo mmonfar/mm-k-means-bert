@@ -74,9 +74,11 @@ system is breaking.
 ┌──────────────────────────────────────────────┐
 │ JSON Payload  ->  app/data.json              │
 │ { meta, departments[], clusters[], points[] }│
-│ also injected into app/index.html inside a   │
-│ <script type="application/json"> block, so   │
-│ the page works over file:// with no server   │
+│ + app/standalone.html: the same payload      │
+│   inlined into a COPY of the page, so it     │
+│   works over file:// with no server          │
+│ Neither is tracked: both carry case text.    │
+│ app/index.html is never written to.          │
 └──────────┬───────────────────────────────────┘
            ▼
 ┌──────────────────────────────────────────────┐
@@ -103,11 +105,14 @@ mm-k-means-bert/
 ├── data_generator.py           # Phase 3.1 — mock clinical corpus
 ├── engine.py                   # Phase 3.2 — the pipeline compiler
 ├── mock_mm_minutes.xlsx        # generated, git-ignored
+├── serve.py                    # local workbench: static server + ingest endpoint
 ├── app/
-│   ├── index.html              # Phase 3.3 — Three.js galaxy canvas
+│   ├── index.html              # Phase 3.3 — the app; tracked, empty payload
+│   ├── standalone.html         # generated, payload inlined, git-ignored
 │   ├── data.json               # generated, git-ignored
 │   └── assets/
-│       └── styles.css          # mmonfar. brand system
+│       ├── brand.css           # canonical mmonfar. brand layer, fonts inlined
+│       └── styles.css          # app layer, composes brand tokens only
 ├── marketing/
 │   ├── linkedin_post.txt
 │   ├── generate_promo_viz.py
@@ -252,6 +257,29 @@ every defaulted column is printed at ingest, so the operator can see what was as
 `Severity_Score` accepts integers or harm words. Note that pandas treats the literal
 string `"None"` as a missing value by default; in a harm column `"None"` means grade 1,
 so the reader overrides the NA list rather than silently defaulting those rows to 3.
+
+---
+
+## 4.8 Data-egress contract
+
+The failure this project has to design against is not an attacker; it is a clinician in a
+hurry committing their own register. Accordingly:
+
+- **No tracked file is ever written by the pipeline.** The payload is injected into
+  `app/standalone.html` (ignored), never into the tracked `app/index.html` template. The
+  template ships with an empty payload and fetches `data.json` at runtime. A test asserts
+  this and fails the build if it regresses.
+- **Every tabular format is ignored by git**, including the synthetic mock. The mock is
+  deterministic and regenerates in about a second, so tracking it buys nothing and the
+  blanket rule cannot be defeated by a badly-named file.
+- **`serve.py` binds to `127.0.0.1` by default.** Uploads are written to `.uploads/`
+  (ignored), capped at 32 MB, restricted to extensions the engine can read, and named
+  from a fixed stem so a crafted filename cannot traverse out of the directory. Binding
+  beyond localhost is possible via `--host` and prints a warning.
+- **No outbound request exists in the running application.** The only network access in
+  the whole project is the one-off model download on first run, and the Three.js CDN
+  import in the page. `app/assets/brand.css` inlines both typefaces, so the interface
+  itself makes no font request and renders identically on an air-gapped machine.
 
 ---
 

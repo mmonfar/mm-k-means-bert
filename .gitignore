@@ -1,3 +1,15 @@
+# =============================================================================
+# mmonfar. // Semantic M&M Failure Navigation Engine
+#
+# Threat model for this file: someone points the tool at a real M&M register,
+# then commits. Git history is difficult to retract and easy to push, so the
+# rule is that NOTHING derived from an input file is ever tracked. Only source
+# is tracked, and every artefact is reproducible with one command.
+#
+# Tracked on purpose: SPECIFICATION.md, README.md, tests/, the marketing copy
+# and render script, and app/index.html — see the note in the app section.
+# =============================================================================
+
 # ---- Environments ----
 venv/
 .venv/
@@ -12,18 +24,22 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 
-# ---- OS noise ----
+# ---- Editor / OS noise ----
 .DS_Store
 Thumbs.db
 desktop.ini
+.vscode/
+.idea/
 *~
 
-# ---- Clinical datasets: NEVER commit anything tabular ----
-# No exceptions, not even the synthetic mock. `python data_generator.py`
-# regenerates it deterministically in about a second, so there is no reason for a
-# spreadsheet to exist in git history — and a blanket rule is the only rule that
-# survives someone dropping a real extract into the folder at 5pm on a Friday.
+# ---- INPUT DATA: never tracked, no exceptions ----
+# Not even the synthetic mock. `python data_generator.py` rebuilds it
+# deterministically in about a second, so there is no reason for a spreadsheet
+# to exist in git history — and a blanket rule is the only rule that survives
+# someone dropping a real extract into the folder at 5pm on a Friday.
 *.xlsx
 *.xls
 *.xlsm
@@ -33,23 +49,35 @@ desktop.ini
 input_mm_data.xlsx
 mock_mm_minutes.xlsx
 
-# ---- Generated pipeline output ----
-# Rebuilt by `python engine.py`. Keeping it out of git means no merge conflicts on
-# a 3,000-line JSON blob and no stale payload shipped alongside fresh code.
+# Registers uploaded through the serve.py workbench. This is the single most
+# likely place for real patient data to land on disk.
+.uploads/
+
+# ---- DERIVED DATA: contains every case narrative verbatim ----
+# data.json and standalone.html both carry the full text of every case. With a
+# real register that is patient data, so both are ignored.
+#
+# app/index.html IS tracked, and stays safe because engine.py never writes to
+# it: the payload is injected into app/standalone.html instead, and the tracked
+# template keeps an empty payload and fetches data.json at runtime.
 app/data.json
+app/standalone.html
+
+# CSV exported from the canvas, if it lands in the project folder.
+mm_galaxy_export.csv
 
 # ---- Generated marketing media ----
-# Rebuilt by `python marketing/generate_promo_viz.py`. These are multi-megabyte
-# binaries that change wholesale on every render, which git handles badly.
-# The post copy and the render script are source and ARE tracked.
+# Rebuilt by `python marketing/generate_promo_viz.py`. Multi-megabyte binaries
+# that change wholesale on every render, which git handles badly. The post copy
+# and the render script are source and ARE tracked.
 marketing/frames/
 marketing/visual_preview.gif
 marketing/visual_preview.mp4
 marketing/*.png
 marketing/*.webm
 
-# To keep the whole marketing folder private instead, replace the block above with:
-#   marketing/
+# To keep the whole marketing folder private instead, replace the block above
+# with:  marketing/
 
 # ---- Model + build caches ----
 .cache/

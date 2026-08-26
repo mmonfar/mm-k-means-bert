@@ -333,21 +333,39 @@ def test_html_has_injection_markers():
     assert html.index(engine.PAYLOAD_START) < html.index(engine.PAYLOAD_END)
 
 
-def test_injection_replaces_the_block(tmp_path):
-    src = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
-    target = tmp_path / "index.html"
-    target.write_text(src, encoding="utf-8")
+def test_injection_writes_a_copy_and_never_touches_the_template(tmp_path):
+    template = ROOT / "app" / "index.html"
+    before = template.read_text(encoding="utf-8")
+    out = tmp_path / "standalone.html"
 
     payload = {"meta": {"n_cases": 3}, "clusters": [], "points": [], "departments": []}
-    assert engine.inject_into_html(payload, target) is True
+    assert engine.inject_into_html(payload, template, out) is True
 
-    out = target.read_text(encoding="utf-8")
-    assert '"n_cases": 3' in out
-    assert out.count(engine.PAYLOAD_START) == 1
-    assert out.count(engine.PAYLOAD_END) == 1
-    # Idempotent: injecting twice must not nest or duplicate blocks.
-    engine.inject_into_html(payload, target)
-    assert target.read_text(encoding="utf-8").count(engine.PAYLOAD_START) == 1
+    written = out.read_text(encoding="utf-8")
+    assert '"n_cases": 3' in written
+    assert written.count(engine.PAYLOAD_START) == 1
+    assert written.count(engine.PAYLOAD_END) == 1
+    # The tracked template must come out byte-identical.
+    assert template.read_text(encoding="utf-8") == before
+
+    # Idempotent: rendering twice must not nest or duplicate blocks.
+    engine.inject_into_html(payload, template, out)
+    assert out.read_text(encoding="utf-8").count(engine.PAYLOAD_START) == 1
+
+
+def test_tracked_template_carries_no_case_data():
+    """The leak guard, as a test.
+
+    app/index.html is tracked. If the pipeline ever writes a payload into it,
+    running the tool on a real register would commit patient narratives to git
+    history. The template must keep an empty payload.
+    """
+    html = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
+    start = html.index(engine.PAYLOAD_START)
+    end = html.index(engine.PAYLOAD_END)
+    block = html[start:end]
+    assert '"points"' not in block, "a payload has been baked into the tracked template"
+    assert ">null<" in block
 
 
 # ---------------------------------------------------------------- semantics (slow)
