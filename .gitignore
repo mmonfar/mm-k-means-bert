@@ -66,18 +66,12 @@ app/standalone.html
 # CSV exported from the canvas, if it lands in the project folder.
 mm_galaxy_export.csv
 
-# ---- Generated marketing media ----
-# Rebuilt by `python marketing/generate_promo_viz.py`. Multi-megabyte binaries
-# that change wholesale on every render, which git handles badly. The post copy
-# and the render script are source and ARE tracked.
-marketing/frames/
-marketing/visual_preview.gif
-marketing/visual_preview.mp4
-marketing/*.png
-marketing/*.webm
-
-# To keep the whole marketing folder private instead, replace the block above
-# with:  marketing/
+# ---- Marketing ----
+# The whole folder is private: the post copy is unpublished work, and the
+# rendered media are multi-megabyte binaries that change wholesale on every
+# render, which git handles badly. Everything in here is reproducible with
+# `python marketing/generate_promo_viz.py`.
+marketing/
 
 # ---- Model + build caches ----
 .cache/

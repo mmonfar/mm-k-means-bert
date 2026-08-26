@@ -158,26 +158,36 @@ uploaded copy.
 Opened as a bare `file://` page there is nothing to upload *to*, so the dropzone says so
 rather than failing silently. Embedding needs the model, and the model lives in Python.
 
-### The control rail
+### The interface
 
-The left rail is the working surface, not decoration:
+The top bar carries chrome: search (`/` to focus), load a register, export what you
+see, and view settings. Under it sits a KPI strip written for whoever is chairing the
+meeting, not for whoever built the model:
 
-| Control | What it does |
+| KPI | Why it is there |
 |---|---|
-| **Search** (`/` to focus, `Esc` to clear) | live filter across case text, ID and department |
-| **Failure galaxies** | click one to isolate it; shows measured size and cohesion |
-| **Minimum severity** | floor the view at 1–5 |
-| **Departments** | click a chip to mute that department |
-| **Geometry** | Amplified ⇄ True, with the standing caveat |
-| **View** | auto-rotate, ambient starfield, depth fade, size-by-severity |
-| **Export CSV** | downloads exactly what is on screen, cluster label included |
-| **‹ toggle** | collapses the rail for a clean full-screen field |
+| **Cases** | how many are in view, against the total, as filters change |
+| **Failure modes** | how many distinct groups the engine found |
+| **Largest mode** | share of cases in the biggest group — the first place to look |
+| **Severe** | share graded 4–5 for harm |
+| **Method** | provenance: last updated, register, and how the picture was made |
 
-Filters compose: search + severity floor + muted departments + isolated galaxy all apply
-at once, and the footer reads `N of 100 cases` so you always know what you are looking at.
-A case that has been filtered out cannot be hovered, clicked or exported.
+Model dimensions, projection type and retained variance deliberately are *not* KPIs.
+They are real, but they are engineering provenance, and "14% variance" reads as "14%
+accurate" to someone meeting the term for the first time. They live under Method, with
+the answer to "is that good?" attached.
 
-**Canvas:** drag to orbit · scroll to zoom · hover to preview · click to pin a case ·
+The left rail is filters only, as one-at-a-time accordions so it never needs scrolling:
+failure galaxies (with measured cohesion, and a control to re-cluster at a different
+number of groups), severity floor, departments, and the geometry switch. Filters
+compose — search, severity, departments and an isolated galaxy all apply at once — and
+a filtered-out case cannot be hovered, clicked or exported.
+
+Hovering a star shows a small preview; clicking pins the full case in a panel on the
+right, which closes with the ×. Terms that assume prior knowledge (cohesion, the match
+scores) carry a short plain-English explainer.
+
+**Canvas:** drag to orbit · scroll to zoom · hover to preview · click to pin ·
 click a nearest-case row to fly to it · `R` to reset the view.
 
 ### Measured distance vs. drawn distance
@@ -239,10 +249,10 @@ mm-k-means-bert/
 │   └── assets/
 │       ├── brand.css         canonical mmonfar. brand layer, fonts inlined
 │       └── styles.css        app layer, composes brand tokens only
-├── marketing/
+├── marketing/                git-ignored in full — post copy and promo renders
 │   ├── linkedin_post.txt
 │   ├── generate_promo_viz.py
-│   └── visual_preview.gif    generated (git-ignored)
+│   └── visual_preview.gif
 └── tests/test_pipeline.py
 ```
 
@@ -268,6 +278,7 @@ The realistic accident is: someone runs this on a real register, then commits.
 | `app/data.json` | yes | **no** |
 | `app/standalone.html` (payload inlined) | yes | **no** |
 | `app/index.html` | **no** — empty payload, fetches `data.json` | yes |
+| `marketing/` | no | **no** — unpublished copy, kept private |
 | `engine.py`, `serve.py`, `tests/`, `SPECIFICATION.md`, `README.md` | no | yes |
 
 Two design decisions do the work:
@@ -280,9 +291,10 @@ Two design decisions do the work:
    mock, which regenerates in about a second. A blanket rule is the only rule that
    survives a real extract being dropped into the folder in a hurry.
 
-Tests, the spec, the README and the marketing copy stay tracked. They contain no case
-data, and the tests are the evidence that the claims in the README hold — removing them
-would remove the proof, not a risk.
+Tests, the spec and the README stay tracked. They contain no case data, and the tests
+are the evidence that the claims in the README hold — removing them would remove the
+proof, not a risk. `marketing/` is ignored as a publishing choice rather than a security
+one: the copy is unpublished and the renders are large binaries.
 
 Two things this does *not* do: it has no de-identification stage, so registers must be
 de-identified upstream; and `--host` can bind the workbench beyond localhost, which

@@ -113,10 +113,10 @@ mm-k-means-bert/
 │   └── assets/
 │       ├── brand.css           # canonical mmonfar. brand layer, fonts inlined
 │       └── styles.css          # app layer, composes brand tokens only
-├── marketing/
+├── marketing/                  # git-ignored in full
 │   ├── linkedin_post.txt
 │   ├── generate_promo_viz.py
-│   └── visual_preview.gif      # generated, git-ignored
+│   └── visual_preview.gif
 └── tests/
     └── test_pipeline.py        # pytest contract tests
 ```

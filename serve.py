@@ -155,6 +155,52 @@ class Handler(SimpleHTTPRequestHandler):
         finally:
             _pipeline_lock.release()
 
+    def _current_input(self) -> Path | None:
+        """The register currently loaded: an uploaded one if present, else the demo."""
+        if UPLOAD_DIR.exists():
+            for candidate in sorted(UPLOAD_DIR.glob("register.*")):
+                if candidate.suffix.lower() in ALLOWED_SUFFIXES:
+                    return candidate
+        return engine.DEFAULT_INPUT if engine.DEFAULT_INPUT.exists() else None
+
+    def do_PUT(self) -> None:  # noqa: N802
+        """Re-cluster the register already loaded, at a different k.
+
+        Changing the number of galaxies is a clustering decision, not a filter — it
+        cannot be done in the browser, because it needs the embeddings. Re-running
+        is cheap on an already-cached model.
+        """
+        if self.path.split("?")[0] != "/api/clusters":
+            self._json(404, {"error": "no such endpoint"})
+            return
+
+        try:
+            k = int(self.headers.get("X-Clusters") or 5)
+        except ValueError:
+            self._json(400, {"error": "X-Clusters must be a number"})
+            return
+        k = max(2, min(12, k))
+
+        source = self._current_input()
+        if source is None:
+            self._json(400, {
+                "error": "no register loaded",
+                "detail": "Run `python data_generator.py` or upload a file.",
+            })
+            return
+
+        if not _pipeline_lock.acquire(blocking=False):
+            self._json(409, {"error": "a rebuild is already running"})
+            return
+        try:
+            print(f"\n[mmonfar.] re-clustering {source.name} at k={k}")
+            payload = engine.run(source, k=k)
+            self._json(200, {"ok": True, "meta": payload["meta"]})
+        except (ValueError, FileNotFoundError) as exc:
+            self._json(400, {"error": str(exc)})
+        finally:
+            _pipeline_lock.release()
+
     def do_DELETE(self) -> None:  # noqa: N802
         """Restore the shipped demo dataset and forget the uploaded register."""
         if self.path.split("?")[0] != "/api/uploads":

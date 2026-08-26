@@ -147,11 +147,90 @@ body {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: calc(var(--gap) * 1.15);
+    gap: 2px;
+}
+
+/* Collapsed, the whole rail is six header rows and a search box — it fits any
+   viewport without scrolling. Open one section and only that section grows, and
+   anything long inside it (a department list) scrolls in place rather than
+   pushing the rest of the controls off-screen. */
+
+.sect {
+    border-top: 1px solid var(--rule);
+}
+
+.sect:first-of-type {
+    border-top: 0;
+}
+
+.sect>summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 2px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    font-family: var(--fm), monospace;
+    font-weight: 500;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+    transition: color 0.16s ease;
+}
+
+.sect>summary::-webkit-details-marker {
+    display: none;
+}
+
+.sect>summary:hover,
+.sect[open]>summary {
+    color: var(--ink);
+}
+
+.chev {
+    transition: transform 0.18s ease;
+    color: var(--ink-38);
+}
+
+.sect[open] .chev {
+    transform: rotate(90deg);
+    color: var(--teal);
+}
+
+.sect-body {
+    padding: 0 0 10px;
+    display: grid;
+    gap: 7px;
+}
+
+.sect-actions {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    margin-top: -4px;
+}
+
+/* Long lists scroll inside their own section. */
+.scroller {
+    max-height: 34vh;
+    overflow-y: auto;
+}
+
+.rail-foot {
+    margin-top: auto;
+    padding-top: var(--gap);
+    border-top: 1px solid var(--rule);
+}
+
+.rail-foot .btn {
+    width: 100%;
 }
 
 .rail h2 {
-    margin: 0 0 calc(var(--gap) * 0.55);
+    margin: 0 0 8px;
     font-family: var(--fm), monospace;
     font-weight: 500;
     font-size: var(--fs-micro);
@@ -230,7 +309,7 @@ body {
    rail reads as one instrument rather than four different widgets. */
 .chans {
     display: grid;
-    gap: 6px;
+    gap: 4px;
 }
 
 .chan {
@@ -241,12 +320,12 @@ body {
     color: var(--ink-38);
     border: 1px solid var(--rule);
     border-radius: 7px;
-    padding: 8px 10px;
+    padding: 6px 9px;
     display: flex;
     align-items: center;
     gap: 9px;
     font-size: var(--fs-small);
-    line-height: 1.3;
+    line-height: 1.25;
     min-width: 0;
     transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
 }
@@ -294,7 +373,7 @@ body {
 
 .chan .sub {
     display: block;
-    margin-top: 2px;
+    margin-top: 1px;
     font-family: var(--fm), monospace;
     font-size: var(--fs-micro);
     letter-spacing: var(--track-mono-ui);
@@ -521,9 +600,14 @@ body {
 }
 
 .stage-wrap {
-    position: relative;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    min-width: 0;
+}
+
+.stage-box {
+    position: relative;
     min-height: 0;
     min-width: 0;
 }
@@ -542,14 +626,16 @@ body {
 
 /* ---- status strip ------------------------------------------------------- */
 
+/* KPI row sits at the top of the working area, where a reader looks first, and
+   the figures are distributed across it rather than bunched at the left edge —
+   four numbers crowded into one corner of a wide strip reads as an accident. */
 .statbar {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    align-items: baseline;
     gap: var(--gap);
-    flex-wrap: wrap;
-    padding: calc(var(--pad) * 0.5) var(--pad);
-    padding-bottom: max(calc(var(--pad) * 0.5), env(safe-area-inset-bottom));
-    border-top: 1px solid var(--rule);
+    padding: calc(var(--pad) * 0.6) var(--pad);
+    border-bottom: 1px solid var(--rule);
 }
 
 .stat {
@@ -577,22 +663,67 @@ body {
     color: var(--ink-38);
 }
 
-.statbar .spacer {
-    margin-left: auto;
-}
-
 .hintline {
+    position: absolute;
+    left: var(--pad);
+    bottom: calc(var(--pad) * 0.75);
+    pointer-events: none;
     font-family: var(--fm), monospace;
     font-size: var(--fs-micro);
     letter-spacing: var(--track-mono-ui);
     text-transform: uppercase;
     color: var(--ink-38);
     white-space: nowrap;
+    opacity: 0.75;
 }
 
 .hintline b {
     color: var(--ink-60);
     font-weight: 500;
+}
+
+/* ---- hover tooltip ------------------------------------------------------
+   Hover shows this, not the inspector: a preview costs a reader nothing, while
+   rewriting a whole panel of text as the cursor drifts is what made the old
+   behaviour feel twitchy. */
+
+#tip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 3;
+    width: min(280px, 60%);
+    padding: 9px 11px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: rgba(30, 42, 50, 0.94);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    pointer-events: none;
+    display: grid;
+    gap: 3px;
+}
+
+#tip[hidden] {
+    display: none;
+}
+
+.tip-id {
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+}
+
+.tip-dept {
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    color: var(--ink-38);
+}
+
+.tip-sum {
+    font-size: var(--fs-small);
+    line-height: 1.45;
+    color: var(--ink-60);
 }
 
 /* ---- inspector ---------------------------------------------------------- */
@@ -602,7 +733,7 @@ body {
     border-left: 1px solid var(--rule);
     padding: var(--pad);
     padding-bottom: max(var(--pad), env(safe-area-inset-bottom));
-    overflow: auto;
+    overflow: hidden;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -610,6 +741,60 @@ body {
 }
 
 .inspector[hidden] {
+    display: none;
+}
+
+/* The prompt to click lives over the galaxy, not in a permanently reserved
+   column: an empty 380px panel is a lot of screen to spend on one sentence. */
+/* A prompt, not an announcement. It sits with the other controls hints in the
+   bottom-left, in the same quiet type, and disappears for good on first use —
+   a pill in the middle of the field competes with the thing it points at. */
+.stage-hint {
+    position: absolute;
+    left: var(--pad);
+    bottom: calc(var(--pad) * 0.75 + 1.9em);
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+    opacity: 0.55;
+    pointer-events: none;
+    animation: hintIn 0.5s ease-out both;
+    animation-delay: 2.4s;
+}
+
+@keyframes hintIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 0.55;
+    }
+}
+
+.stage-hint[hidden] {
+    display: none;
+}
+
+.icon-btn.close {
+    width: 22px;
+    height: 22px;
+    font-size: 15px;
+    border-color: transparent;
+    background: transparent;
+}
+
+.insp-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.insp-card[hidden] {
     display: none;
 }
 
@@ -650,10 +835,55 @@ body {
     flex: none;
 }
 
+/* The inspector is a fixed column: the head, metadata and neighbour list are
+   all bounded, so the narrative is the only part that can vary. It gets whatever
+   height is left over and fades out rather than forcing the panel to scroll. */
+.summary-wrap {
+    position: relative;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.summary-wrap::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 34px;
+    background: linear-gradient(to bottom, transparent, var(--canvas));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+}
+
+.inspector:not(.expanded) .summary-wrap:has(+ .expand:not([hidden]))::after {
+    opacity: 1;
+}
+
+.inspector.expanded .summary-wrap {
+    overflow: auto;
+}
+
 .case-summary {
     font-size: var(--fs-body);
     line-height: 1.6;
     margin: 0;
+}
+
+.link.expand {
+    justify-self: start;
+    padding: 0;
+    margin-top: -2px;
+    color: var(--teal);
+}
+
+/* Expanding gives the narrative the room the neighbour list was using, rather
+   than making the column taller than the window. */
+.inspector.expanded .insp-sect,
+.inspector.expanded dl.meta {
+    display: none;
 }
 
 dl.meta {
@@ -1053,6 +1283,18 @@ dl.meta dd {
     }
 }
 
+@media (max-width: 760px) {
+    .statbar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        row-gap: calc(var(--gap) * 0.8);
+    }
+
+    .method-stat {
+        grid-column: 1 / -1;
+        justify-self: start;
+    }
+}
+
 @media (max-width: 560px) {
     .bar h1 {
         display: none;
@@ -1063,10 +1305,362 @@ dl.meta dd {
     }
 }
 
-/* Short viewports: shed padding rather than clipping. */
+/* Short viewports: shed padding rather than making a filter panel scroll.
+   A rail that scrolls by 20px looks like a mistake, so the vertical rhythm
+   tightens progressively instead. */
+@media (max-height: 860px) {
+    .rail {
+        padding: 14px;
+    }
+
+    .sect>summary {
+        padding: 8px 2px;
+    }
+
+    .chan {
+        padding: 5px 9px;
+    }
+}
+
+@media (max-height: 700px) {
+    .rail {
+        padding: 11px;
+    }
+
+    .sect>summary {
+        padding: 6px 2px;
+    }
+
+    .chan .sub {
+        font-size: 9px;
+    }
+
+    .recluster {
+        margin-top: 2px;
+        padding-top: 7px;
+    }
+}
+
 @media (max-height: 560px) {
     :root {
         --pad: 10px;
         --gap: 8px;
     }
+}
+
+/* ---- bar tools ----------------------------------------------------------
+   Search, load, export and settings are chrome, not analysis, so they sit in
+   the top bar where a reader expects them rather than competing with the
+   filters for rail space. */
+
+.bar-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+}
+
+.bar-tools .search {
+    width: clamp(150px, 18vw, 250px);
+}
+
+.icon-btn {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    padding: 0;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--well);
+    color: var(--ink-60);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.icon-btn:hover {
+    color: var(--ink);
+    border-color: var(--teal-40);
+}
+
+.icon-btn[aria-expanded="true"] {
+    color: var(--cream);
+    background: var(--teal-16);
+    border-color: var(--teal-40);
+}
+
+/* ---- popovers ----------------------------------------------------------- */
+
+.pop {
+    position: fixed;
+    z-index: 30;
+    overflow: auto;
+    width: min(300px, calc(100vw - 24px));
+    padding: var(--pad);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: rgba(30, 42, 50, 0.97);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: grid;
+    gap: 8px;
+}
+
+.pop[hidden] {
+    display: none;
+}
+
+.pop-wide {
+    width: min(340px, calc(100vw - 24px));
+}
+
+.pop h2 {
+    margin: 0 0 2px;
+    font-family: var(--fm), monospace;
+    font-weight: 500;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+}
+
+dl.method {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 14px;
+}
+
+dl.method dt {
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+}
+
+dl.method dd {
+    margin: 0;
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-small);
+    word-break: break-word;
+}
+
+/* ---- recluster ---------------------------------------------------------- */
+
+.recluster {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+}
+
+.recluster .btn {
+    margin-left: auto;
+}
+
+.method-stat {
+    justify-self: end;
+    align-self: center;
+}
+
+.method-stat .link {
+    padding: 0;
+}
+
+/* ---- inline explainers --------------------------------------------------
+   A term like "cohesion" is jargon on first read. The number carries its own
+   definition rather than assuming the reader has met it before. */
+
+.info {
+    display: inline-grid;
+    place-items: center;
+    width: 13px;
+    height: 13px;
+    margin-left: 4px;
+    border: 1px solid var(--teal-40);
+    border-radius: 50%;
+    color: var(--teal);
+    font-family: var(--fm), monospace;
+    font-size: 8.5px;
+    line-height: 1;
+    cursor: help;
+    position: relative;
+    vertical-align: middle;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* The balloon is a single element on <body>, positioned by script, so no
+   scrolling ancestor can clip it and no stacking context can bury it. */
+.balloon {
+    position: fixed;
+    z-index: 60;
+    max-width: 270px;
+    padding: 9px 11px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    background: rgba(30, 42, 50, 0.98);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    color: var(--ink-60);
+    font-family: var(--fw), sans-serif;
+    font-size: var(--fs-small);
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.5;
+    text-align: left;
+    text-transform: none;
+    pointer-events: none;
+}
+
+.balloon[hidden] {
+    display: none;
+}
+
+/* Departments list shows every department: making someone scroll a filter is
+   friction, and ten rows fit once only one section is open at a time. */
+.scroller {
+    max-height: none;
+    overflow: visible;
+}
+
+/* ---- galaxy cards -------------------------------------------------------
+   The row was a dot and a line of text with a third of its width empty. The
+   measured figures fill that space: share of the register as a bar under the
+   name, cohesion as a right-aligned readout. */
+
+.chan.galaxy {
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+}
+
+.chan.galaxy .lab {
+    display: grid;
+    gap: 3px;
+}
+
+.chan .bar {
+    display: block;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--cream-08);
+    overflow: hidden;
+}
+
+.chan .bar span {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: currentColor;
+    opacity: 0.55;
+}
+
+.chan[data-on="1"] .bar span {
+    opacity: 1;
+}
+
+.chan .metric {
+    flex: none;
+    display: grid;
+    justify-items: end;
+    gap: 1px;
+    padding-left: 8px;
+    border-left: 1px solid var(--rule);
+}
+
+.chan .mv {
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-small);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-60);
+}
+
+.chan[data-on="1"] .mv {
+    color: var(--cream);
+}
+
+.chan .mk {
+    font-family: var(--fm), monospace;
+    font-size: 8.5px;
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+}
+
+/* ---- regroup stepper ---------------------------------------------------- */
+
+.recluster {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.recluster-label {
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+}
+
+.stepper {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--well);
+    overflow: hidden;
+}
+
+.stepper .step {
+    width: 24px;
+    height: 26px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-60);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.stepper .step:hover {
+    color: var(--cream);
+    background: var(--teal-16);
+}
+
+.stepper input {
+    width: 30px;
+    border: 0;
+    border-left: 1px solid var(--rule);
+    border-right: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink);
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-small);
+    text-align: center;
+    padding: 5px 0;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.recluster .btn {
+    margin-left: auto;
+    padding: 6px 10px;
+}
+
+.sect-actions .info {
+    margin-right: auto;
+    margin-left: 0;
 }

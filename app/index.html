@@ -22,131 +22,190 @@
             <div class="wordmark">mmonfar<i>.</i></div>
             <div class="sep"></div>
             <h1>Semantic M&amp;M failure navigation</h1>
+
             <div class="caveat" id="bar-caveat"></div>
-            <button type="button" class="btn" id="railToggle" aria-expanded="true"
-                aria-controls="rail">Controls</button>
+
+            <div class="bar-tools">
+                <div class="search">
+                    <input type="search" id="q" placeholder="Search case ID or text…"
+                        aria-label="Search case text, ID and department" autocomplete="off"
+                        spellcheck="false">
+                    <kbd>/</kbd>
+                </div>
+                <button type="button" class="icon-btn" id="upload-btn" aria-expanded="false"
+                    aria-controls="upload-pop" title="Load a case register">&#8613;</button>
+                <button type="button" class="icon-btn" id="export"
+                    title="Export the visible cases as CSV">&#8615;</button>
+                <button type="button" class="icon-btn" id="settings-btn" aria-expanded="false"
+                    aria-controls="settings-pop" title="View settings">&#9881;</button>
+                <button type="button" class="icon-btn" id="railToggle" aria-expanded="true"
+                    aria-controls="rail" title="Filters">&#9636;</button>
+            </div>
         </header>
+
+        <div class="pop" id="upload-pop" hidden>
+            <h2>Case register</h2>
+            <div id="drop" tabindex="0" role="button"
+                aria-label="Upload a case register: activate to choose a file, or drop one here">
+                <div class="drop-icon" aria-hidden="true">&#8613;</div>
+                <div class="drop-main">Drop your register</div>
+                <div class="drop-sub">or click &middot; xlsx &middot; csv &middot; tsv</div>
+            </div>
+            <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt" hidden>
+            <p class="note" id="data-note" hidden></p>
+            <div class="row" id="data-actions" hidden>
+                <button type="button" class="link" id="restore">restore demo</button>
+            </div>
+        </div>
+
+        <div class="pop pop-wide" id="method-pop" hidden>
+            <h2>How this was built</h2>
+            <dl class="method">
+                <dt>Last updated</dt>
+                <dd id="m-built">—</dd>
+                <dt>Register</dt>
+                <dd id="m-src">—</dd>
+                <dt>Cases read</dt>
+                <dd id="m-cases">—</dd>
+                <dt>Groups found</dt>
+                <dd id="m-groups">—</dd>
+                <dt>Picture detail</dt>
+                <dd id="m-var">—</dd>
+                <dt>Where it ran</dt>
+                <dd id="m-model">—</dd>
+            </dl>
+            <p class="caveat-body" id="m-note"></p>
+        </div>
+
+        <div class="pop" id="settings-pop" hidden>
+            <h2>View</h2>
+            <label class="switch"><input type="checkbox" id="t-rotate" checked>
+                <span>Auto-rotate</span></label>
+            <label class="switch"><input type="checkbox" id="t-stars" checked>
+                <span>Ambient starfield</span></label>
+            <label class="switch"><input type="checkbox" id="t-depth" checked>
+                <span>Depth fade</span></label>
+            <label class="switch"><input type="checkbox" id="t-sev" checked>
+                <span>Size by severity</span></label>
+            <button type="button" class="btn" id="reset-view">Reset camera</button>
+        </div>
 
         <div class="body">
 
-            <aside class="rail" id="rail" aria-label="Controls">
+            <aside class="rail" id="rail" aria-label="Filters">
 
-                <section>
-                    <h2>Find</h2>
-                    <div class="search">
-                        <input type="search" id="q" placeholder="Search cases…"
-                            aria-label="Search case text, ID and department" autocomplete="off"
-                            spellcheck="false">
-                        <kbd>/</kbd>
+                <details class="sect" open>
+                    <summary>Failure galaxies<span class="chev" aria-hidden="true">›</span></summary>
+                    <div class="sect-body">
+                        <div class="sect-actions">
+                            <span class="info" tabindex="0" role="note" data-tip="Cohesion is
+                                how alike the cases inside a group are, from 0 to 1. High
+                                (above about 0.4) means the same failure happening again and
+                                again — worth fixing once. Low means a mixed bag filed
+                                together.">i</span>
+                            <button type="button" class="link" id="gal-all">show all</button>
+                        </div>
+                        <div class="chans" id="legend-items"></div>
+
+                        <div class="recluster">
+                            <span class="recluster-label">Groups</span>
+                            <div class="stepper">
+                                <button type="button" class="step" id="k-down"
+                                    aria-label="Fewer groups">&minus;</button>
+                                <input type="number" id="kval" min="2" max="12" value="5"
+                                    aria-label="Number of groups">
+                                <button type="button" class="step" id="k-up"
+                                    aria-label="More groups">+</button>
+                            </div>
+                            <button type="button" class="btn" id="kapply">Regroup</button>
+                        </div>
+                        <p class="note" id="k-note" hidden></p>
                     </div>
-                </section>
+                </details>
 
-                <section>
-                    <h2>Case register
-                        <button type="button" class="link" id="restore">demo</button>
-                    </h2>
-                    <div id="drop" tabindex="0" role="button"
-                        aria-label="Upload a case register: activate to choose a file, or drop one here">
-                        <div class="drop-icon" aria-hidden="true">&#8613;</div>
-                        <div class="drop-main">Drop your register</div>
-                        <div class="drop-sub">or click &middot; xlsx &middot; csv &middot; tsv</div>
+                <details class="sect">
+                    <summary>Severity<span class="chev" aria-hidden="true">›</span></summary>
+                    <div class="sect-body">
+                        <div class="seg" role="radiogroup" aria-label="Minimum severity">
+                            <button type="button" class="seg-btn is-on" data-sev="1" role="radio"
+                                aria-checked="true">All</button>
+                            <button type="button" class="seg-btn" data-sev="2" role="radio"
+                                aria-checked="false">2+</button>
+                            <button type="button" class="seg-btn" data-sev="3" role="radio"
+                                aria-checked="false">3+</button>
+                            <button type="button" class="seg-btn" data-sev="4" role="radio"
+                                aria-checked="false">4+</button>
+                            <button type="button" class="seg-btn" data-sev="5" role="radio"
+                                aria-checked="false">5</button>
+                        </div>
                     </div>
-                    <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt" hidden>
-                    <p class="note" id="data-note"></p>
-                    <div class="row" id="data-actions" hidden>
-                        <label class="mini-field" for="kval">Galaxies
-                            <input type="number" id="kval" min="2" max="12" value="5">
-                        </label>
-                    </div>
-                </section>
+                </details>
 
-                <section>
-                    <h2>Failure galaxies
-                        <span><button type="button" class="link" id="gal-all">all</button></span>
-                    </h2>
-                    <div class="chans" id="legend-items"></div>
-                </section>
-
-                <section>
-                    <h2>Minimum severity</h2>
-                    <div class="seg" role="radiogroup" aria-label="Minimum severity">
-                        <button type="button" class="seg-btn is-on" data-sev="1" role="radio"
-                            aria-checked="true">All</button>
-                        <button type="button" class="seg-btn" data-sev="2" role="radio"
-                            aria-checked="false">2+</button>
-                        <button type="button" class="seg-btn" data-sev="3" role="radio"
-                            aria-checked="false">3+</button>
-                        <button type="button" class="seg-btn" data-sev="4" role="radio"
-                            aria-checked="false">4+</button>
-                        <button type="button" class="seg-btn" data-sev="5" role="radio"
-                            aria-checked="false">5</button>
-                    </div>
-                </section>
-
-                <section>
-                    <h2>Departments
-                        <span>
+                <details class="sect">
+                    <summary>Departments<span class="chev" aria-hidden="true">›</span></summary>
+                    <div class="sect-body">
+                        <div class="sect-actions">
                             <button type="button" class="link" id="dept-all">all</button>
                             <button type="button" class="link" id="dept-none">none</button>
-                        </span>
-                    </h2>
-                    <div class="chans" id="dept-chips"></div>
-                </section>
-
-                <section>
-                    <h2>Geometry</h2>
-                    <div class="seg" role="radiogroup" aria-label="Coordinate geometry">
-                        <button type="button" id="geo-amp" class="seg-btn is-on" role="radio"
-                            aria-checked="true">Amplified</button>
-                        <button type="button" id="geo-true" class="seg-btn" role="radio"
-                            aria-checked="false">True</button>
+                        </div>
+                        <div class="chans" id="dept-chips"></div>
                     </div>
-                    <p class="caveat-body" id="geo-caveat"></p>
-                </section>
+                </details>
 
-                <section>
-                    <h2>View</h2>
-                    <label class="switch"><input type="checkbox" id="t-rotate" checked>
-                        <span>Auto-rotate</span></label>
-                    <label class="switch"><input type="checkbox" id="t-stars" checked>
-                        <span>Ambient starfield</span></label>
-                    <label class="switch"><input type="checkbox" id="t-depth" checked>
-                        <span>Depth fade</span></label>
-                    <label class="switch"><input type="checkbox" id="t-sev" checked>
-                        <span>Size by severity</span></label>
-                </section>
-
-                <section>
-                    <h2>Export</h2>
-                    <div class="row">
-                        <button type="button" class="btn" id="export">Download visible as CSV</button>
+                <details class="sect">
+                    <summary>Geometry<span class="chev" aria-hidden="true">›</span></summary>
+                    <div class="sect-body">
+                        <div class="seg" role="radiogroup" aria-label="Coordinate geometry">
+                            <button type="button" id="geo-amp" class="seg-btn is-on" role="radio"
+                                aria-checked="true">Amplified</button>
+                            <button type="button" id="geo-true" class="seg-btn" role="radio"
+                                aria-checked="false">True</button>
+                        </div>
+                        <p class="caveat-body" id="geo-caveat"></p>
                     </div>
-                </section>
+                </details>
 
             </aside>
 
             <div class="content">
 
                 <div class="stage-wrap">
-                    <canvas id="stage"></canvas>
-
+                    <!-- These are the four numbers someone chairing an M&M meeting
+                         would actually act on. Model dimensions, projection method and
+                         retained variance are engineering provenance: real, but not
+                         decisions, and "14% variance" reads as "14% accurate" to a
+                         reader who has not met the term. They live in Method instead. -->
                     <div class="statbar">
                         <div class="stat"><span class="v" id="stat-shown">—</span>
                             <span class="k" id="stat-shown-k">Cases</span>
                         </div>
                         <div class="stat"><span class="v" id="stat-clusters">—</span>
-                            <span class="k">Galaxies</span>
+                            <span class="k">Failure modes</span>
                         </div>
-                        <div class="stat"><span class="v" id="stat-dims">—</span>
-                            <span class="k">Dimensions</span>
+                        <div class="stat"><span class="v" id="stat-top">—</span>
+                            <span class="k">Largest mode
+                                <span class="info" tabindex="0" role="note" data-tip="The
+                                    share of cases in the biggest group. This is the failure
+                                    mode costing you the most events — the first place to
+                                    look for a systemic fix.">i</span>
+                            </span>
                         </div>
-                        <div class="stat"><span class="v" id="stat-proj">—</span>
-                            <span class="k">Projection</span>
+                        <div class="stat"><span class="v" id="stat-sev">—</span>
+                            <span class="k">Severe
+                                <span class="info" tabindex="0" role="note" data-tip="Share
+                                    of visible cases graded 4 or 5 for harm.">i</span>
+                            </span>
                         </div>
-                        <div class="stat"><span class="v" id="stat-var">—</span>
-                            <span class="k">Variance kept</span>
+                        <div class="stat method-stat">
+                            <button type="button" class="link" id="method-btn"
+                                aria-expanded="false" aria-controls="method-pop">Method</button>
                         </div>
-                        <div class="spacer"></div>
+                    </div>
+
+                    <div class="stage-box">
+                        <canvas id="stage"></canvas>
+                        <div id="tip" hidden></div>
+                        <div class="stage-hint" id="stage-hint">Click a star to open its case</div>
                         <div class="hintline">
                             <b>drag</b> orbit · <b>scroll</b> zoom · <b>click</b> pin ·
                             <b>/</b> search · <b>R</b> reset
@@ -155,12 +214,18 @@
                 </div>
 
                 <aside class="inspector" id="inspector" aria-live="polite" hidden>
+                    <div class="insp-card" id="insp-card">
                     <div class="insp-head">
                         <span class="case-id" id="case-id">—</span>
                         <span class="case-date" id="case-date"></span>
+                        <button type="button" class="icon-btn close" id="insp-close"
+                            title="Close">&times;</button>
                     </div>
                     <div class="case-cluster" id="case-cluster"></div>
-                    <p class="case-summary" id="case-summary"></p>
+                    <div class="summary-wrap">
+                        <p class="case-summary" id="case-summary"></p>
+                    </div>
+                    <button type="button" class="link expand" id="case-more" hidden>Read full case</button>
 
                     <dl class="meta">
                         <dt>Dept</dt>
@@ -176,9 +241,17 @@
                     <section class="insp-sect">
                         <h3>Closest cases · measured</h3>
                         <ul id="nn-list"></ul>
-                        <p class="caveat-body">Cosine similarity in the full embedding space.
-                            Unaffected by the projection or the amplified spacing.</p>
+                        <p class="caveat-body">How closely the wording of each case
+                            matches this one in meaning, where <b>1.00</b> would be the same
+                            case. Judged on the whole write-up, not on shared words, so two
+                            cases with nothing in common can still score highly.
+                            <span class="info" tabindex="0" role="note" data-tip="Cosine
+                                similarity between sentence embeddings, computed across all
+                                384 dimensions before the map is drawn — so neither the
+                                projection nor the amplified spacing can change it.">i</span>
+                        </p>
                     </section>
+                    </div>
                 </aside>
 
             </div>
@@ -439,27 +512,47 @@
             ? null : Math.round(data.meta.variance_retained * 100);
 
         document.getElementById('stat-clusters').textContent = data.meta.n_clusters;
-        document.getElementById('stat-dims').textContent = data.meta.embedding_dim;
-        document.getElementById('stat-proj').textContent =
-            (data.meta.projection || '—').toUpperCase();
-        document.getElementById('stat-var').textContent =
-            varPct == null ? 'n/a' : varPct + '%';
+
+        document.getElementById('m-built').textContent = data.meta.generated || '—';
+        document.getElementById('m-src').textContent = data.meta.source_file || '—';
+        document.getElementById('m-cases').textContent = data.meta.n_cases;
+        document.getElementById('m-groups').textContent =
+            data.meta.n_clusters + ' (found automatically, not pre-set)';
+        document.getElementById('m-model').textContent = 'On this computer — nothing sent out';
+
+        // "Is 14% ok?" is the first question anyone senior asks, so the number
+        // comes with its answer attached rather than a definition of the term.
+        const detailVerdict = varPct == null ? ''
+            : (varPct >= 10 ? 'normal for this kind of map' : 'low — read the map loosely');
+        document.getElementById('m-var').textContent =
+            varPct == null ? 'n/a' : varPct + '% — ' + detailVerdict;
+
+        document.getElementById('m-note').innerHTML =
+            '<b>Is ' + (varPct == null ? 'that' : varPct + '%') + ' good?</b> For this kind ' +
+            'of picture, yes — 10–25% is the usual range, because squashing writing down ' +
+            'to a 3-D map always throws detail away. It matters less than it sounds: the ' +
+            'grouping is done first, on the full reading of every case, and is not affected ' +
+            'by it. The number only describes the drawing. Where an exact answer matters, ' +
+            'use the match scores on an individual case.';
 
         document.getElementById('bar-caveat').innerHTML =
-            'Gaps amplified <b>' + gain.toFixed(2) + '×</b>' +
-            (varPct == null ? '' : ' · <b>' + varPct + '%</b> variance kept');
+            (data.meta.source_file || 'demo register') +
+            (data.meta.generated ? ' · updated <b>' + data.meta.generated + '</b>' : '');
 
         const caveatEl = document.getElementById('geo-caveat');
+        // Written for someone chairing the meeting, not someone who has met the
+        // word "projection". The technical version sits behind Method.
         const CAVEAT = {
             amplified:
-                'Galaxies sit <b>' + gain.toFixed(2) + '×</b> further apart than the ' +
-                'projection puts them, so they read as distinct. Shape <i>within</i> a galaxy ' +
-                'is untouched, but the <b>gaps between them are not measured distances</b>.',
+                'The groups are drawn <b>' + gain.toFixed(2) + '×</b> further apart than ' +
+                'they really are, so you can tell them apart on screen. The shape ' +
+                '<i>inside</i> each group is real; the <b>space between groups is not a ' +
+                'measurement</b>. Switch to True to see it without the help.',
             true:
-                'Raw projection, nothing added.' +
-                (varPct == null ? '' : ' Only <b>' + varPct + '%</b> of the embedding ' +
-                    'variance survives three axes, so proximity is a hint, not proof.') +
-                ' The cosine figures on each case are the measurement.'
+                'Now showing the real layout, with nothing added to separate the groups. ' +
+                'Flattening to three dimensions loses detail either way, so treat what ' +
+                'sits near what as a prompt to look, and use the match scores on each ' +
+                'case as the actual number.'
         };
 
         let geoTarget = 0;      // 0 = amplified, 1 = true
@@ -490,6 +583,8 @@
         const deptBox = document.getElementById('dept-chips');
         const shownEl = document.getElementById('stat-shown');
         const shownK = document.getElementById('stat-shown-k');
+        const topEl = document.getElementById('stat-top');
+        const sevEl = document.getElementById('stat-sev');
         const qInput = document.getElementById('q');
 
         let isolated = null;
@@ -512,11 +607,22 @@
             b.className = 'chan galaxy';
             b.dataset.on = '1';
             b.style.color = c.color;
-            const cohesion = c.cohesion == null ? '' :
-                ' · cohesion ' + c.cohesion.toFixed(2);
+            // "Cohesion" is jargon on first read, so the number carries its own
+            // explanation rather than assuming the reader knows the term.
+            // The right-hand third of the row was empty, so the measured numbers
+            // live there: share of the register as a bar, cohesion as a figure.
+            const share = Math.round((c.size / n) * 100);
+            const coh = c.cohesion == null ? null : c.cohesion;
             b.innerHTML =
-                '<i></i><span class="lab"><span class="nm">' + c.label + '</span>' +
-                '<span class="sub">' + c.size + ' cases' + cohesion + '</span></span>';
+                '<i></i>' +
+                '<span class="lab">' +
+                '<span class="nm">' + c.label + '</span>' +
+                '<span class="sub">' + c.size + ' cases · ' + share + '%</span>' +
+                '<span class="bar"><span style="width:' + share + '%"></span></span>' +
+                '</span>' +
+                (coh === null ? '' :
+                    '<span class="metric"><span class="mv">' + coh.toFixed(2) + '</span>' +
+                    '<span class="mk">cohesion</span></span>');
             b.addEventListener('click', () => {
                 isolated = (isolated === c.id) ? null : c.id;
                 applyFilters();
@@ -536,6 +642,8 @@
             });
             deptBox.appendChild(b);
         });
+
+        queueMicrotask(() => wireExplainers(legendBox));
 
         document.getElementById('gal-all').addEventListener('click', () => {
             isolated = null;
@@ -580,10 +688,29 @@
             shownEl.classList.toggle('live', shown !== n);
             shownK.textContent = shown === n ? 'Cases' : 'of ' + n + ' cases';
 
-            if (pinned !== null && !visible[pinned]) {
-                pinned = null;
-                inspector.hidden = true;
+            // The two headline numbers track the filters, so they always describe
+            // what is actually on screen rather than the whole register.
+            let severe = 0;
+            const perCluster = new Map();
+            for (let i = 0; i < n; i++) {
+                if (!visible[i]) continue;
+                if (points[i].severity >= 4) severe++;
+                const c = points[i].cluster;
+                perCluster.set(c, (perCluster.get(c) || 0) + 1);
             }
+            let topCount = 0;
+            let topId = null;
+            perCluster.forEach((count, c) => {
+                if (count > topCount) { topCount = count; topId = c; }
+            });
+            const topCluster = clusters.find(c => c.id === topId);
+
+            topEl.textContent = shown ? Math.round((topCount / shown) * 100) + '%' : '—';
+            topEl.style.color = topCluster ? topCluster.color : '';
+            topEl.title = topCluster ? topCluster.label : '';
+            sevEl.textContent = shown ? Math.round((severe / shown) * 100) + '%' : '—';
+
+            if (pinned !== null && !visible[pinned]) clearCase();
         }
 
         document.querySelectorAll('[data-sev]').forEach(btn => {
@@ -626,15 +753,93 @@
             geo.attributes.aSize.needsUpdate = true;
         });
 
+        const railEl = document.getElementById('rail');
         document.getElementById('railToggle').addEventListener('click', e => {
-            const rail = document.getElementById('rail');
-            rail.hidden = !rail.hidden;
-            e.target.setAttribute('aria-expanded', String(!rail.hidden));
+            railEl.hidden = !railEl.hidden;
+            e.currentTarget.setAttribute('aria-expanded', String(!railEl.hidden));
+        });
+
+        /* Popovers for the two things that are settings rather than analysis:
+           where the data comes from, and how the view is drawn. */
+
+        const pops = [
+            [document.getElementById('settings-btn'), document.getElementById('settings-pop')],
+            [document.getElementById('upload-btn'), document.getElementById('upload-pop')],
+            [document.getElementById('method-btn'), document.getElementById('method-pop')]
+        ];
+
+        /* Anchor a panel under its button and keep it on screen. Right-aligning to
+           the button is the natural reading, but a panel anchored to a button near
+           the right edge, or wider than the space left, runs off the page — so the
+           result is clamped to the viewport in both axes after measuring. */
+        function placePop(btn, pop) {
+            pop.style.left = '0px';
+            pop.style.top = '0px';
+            pop.style.right = 'auto';
+            pop.style.maxHeight = '';
+
+            const r = btn.getBoundingClientRect();
+            const w = pop.offsetWidth;
+            const h = pop.offsetHeight;
+            const M = 10;
+
+            let left = r.right - w;                     // right edges aligned
+            left = Math.max(M, Math.min(left, innerWidth - w - M));
+
+            let top = r.bottom + 8;
+            if (top + h > innerHeight - M) {
+                // Prefer flipping above the button; if it still does not fit,
+                // pin it and let the panel scroll internally.
+                const above = r.top - h - 8;
+                if (above >= M) {
+                    top = above;
+                } else {
+                    top = M;
+                    pop.style.maxHeight = (innerHeight - M * 2) + 'px';
+                }
+            }
+
+            pop.style.left = left + 'px';
+            pop.style.top = top + 'px';
+        }
+
+        function closePops(except) {
+            pops.forEach(([btn, pop]) => {
+                if (pop === except) return;
+                pop.hidden = true;
+                btn.setAttribute('aria-expanded', 'false');
+            });
+        }
+
+        pops.forEach(([btn, pop]) => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const open = pop.hidden;
+                closePops(open ? pop : null);
+                pop.hidden = !open;
+                btn.setAttribute('aria-expanded', String(open));
+                if (open) placePop(btn, pop);
+            });
+            pop.addEventListener('click', e => e.stopPropagation());
+        });
+
+        addEventListener('click', () => closePops(null));
+        addEventListener('keydown', e => {
+            if (e.key === 'Escape') closePops(null);
+        });
+
+        document.getElementById('reset-view').addEventListener('click', () => {
+            flight = null;
+            camera.position.copy(HOME);
+            controls.target.set(0, 0, 0);
+            controls.update();
         });
 
         /* ---------------- Inspector ---------------- */
 
         const inspector = document.getElementById('inspector');
+        const stageHint = document.getElementById('stage-hint');
+        const tip = document.getElementById('tip');
         const el = {
             id: document.getElementById('case-id'),
             date: document.getElementById('case-date'),
@@ -656,6 +861,15 @@
             el.cluster.style.color = c.color;
             el.cluster.innerHTML = '<i></i>' + c.label;
             el.summary.textContent = p.summary;
+            // A long narrative must not push the panel into a scrollbar, so the
+            // text region is clamped to whatever space is left and offers to open
+            // the rest rather than growing the column.
+            inspector.classList.remove('expanded');
+            requestAnimationFrame(() => {
+                const w = el.summary.parentElement;
+                caseMore.hidden = w.scrollHeight <= w.clientHeight + 2;
+                caseMore.textContent = 'Read full case';
+            });
             el.dept.textContent = p.department;
             el.sev.textContent = '●'.repeat(p.severity) + '○'.repeat(5 - p.severity);
 
@@ -680,9 +894,24 @@
             }).join('');
 
             inspector.hidden = false;
+            stageHint.hidden = true;
+        }
+
+        function clearCase() {
+            pinned = null;
+            inspector.hidden = true;
+            stageHint.hidden = false;
         }
 
         geoOnChange = () => { if (pinned !== null) showCase(pinned); };
+
+        document.getElementById('insp-close').addEventListener('click', clearCase);
+
+        const caseMore = document.getElementById('case-more');
+        caseMore.addEventListener('click', () => {
+            const on = inspector.classList.toggle('expanded');
+            caseMore.textContent = on ? 'Show less' : 'Read full case';
+        });
 
         // Jumping to a neighbour is how you check the engine's work: two cases with
         // no shared keywords should still sit next to each other.
@@ -724,33 +953,106 @@
             raycaster.setFromCamera(pointer, camera);
             const hits = raycaster.intersectObject(stars);
             if (!hits.length) return null;
-            const hit = hits.find(h => visible[h.index]);
-            return hit ? hit.index : null;
+
+            // Nearest to the ray, not nearest along it. Sorting by depth makes the
+            // pick flicker between a far star the cursor is centred on and a near
+            // one it is only clipping; sorting by distanceToRay feels magnetic.
+            let best = null;
+            for (const h of hits) {
+                if (!visible[h.index]) continue;
+                if (best === null || h.distanceToRay < best.distanceToRay) best = h;
+            }
+            return best ? best.index : null;
         }
 
-        function setHover(i) {
+        /* Hover is a preview, not a navigation event.
+
+           Two problems made the old behaviour twitchy. It swapped the whole
+           inspector on every hover, so drifting across a dense galaxy rewrote a
+           panel of text several times a second; and it dropped the highlight the
+           instant the ray missed, so a star was only holdable by keeping the
+           cursor perfectly still on it.
+
+           Now hover only lights the star and shows a small tooltip, and losing the
+           ray starts a short timer rather than clearing immediately — so passing
+           behind another star, or a hand tremor, does not drop the preview. The
+           inspector belongs to the click. */
+
+        const HOVER_GRACE_MS = 180;
+        let hoverClearTimer = null;
+        let lastPointerEvent = null;
+
+        function paintHover(i) {
             if (hovered === i) return;
-            if (hovered !== null) sizes[hovered] = baseSizes[hovered];
+            if (hovered !== null && hovered !== pinned) {
+                sizes[hovered] = baseSizes[hovered];
+            }
             hovered = i;
             if (hovered !== null) sizes[hovered] = baseSizes[hovered] * 2.1;
             geo.attributes.aSize.needsUpdate = true;
             canvas.style.cursor = hovered === null ? '' : 'pointer';
-            if (hovered !== null) showCase(hovered);
-            else if (pinned !== null) showCase(pinned);
-            else inspector.hidden = true;
+            renderTip();
+        }
+
+        function renderTip() {
+            if (hovered === null || !lastPointerEvent) {
+                tip.hidden = true;
+                return;
+            }
+            const p = points[hovered];
+            const c = clusters.find(c => c.id === p.cluster) || { color: '#FDFBF7' };
+            tip.innerHTML =
+                '<span class="tip-id" style="color:' + c.color + '">' + p.id + '</span>' +
+                '<span class="tip-dept">' + p.department + ' · severity ' + p.severity +
+                '</span><span class="tip-sum">' + p.summary.slice(0, 96) +
+                (p.summary.length > 96 ? '…' : '') + '</span>';
+            tip.hidden = false;
+
+            // Keep the tooltip inside the canvas box rather than letting it run off
+            // the edge and force a scrollbar on the page.
+            const box = canvas.getBoundingClientRect();
+            const w = tip.offsetWidth;
+            const h = tip.offsetHeight;
+            let x = lastPointerEvent.clientX - box.left + 16;
+            let y = lastPointerEvent.clientY - box.top + 16;
+            if (x + w > box.width - 8) x = lastPointerEvent.clientX - box.left - w - 16;
+            if (y + h > box.height - 8) y = lastPointerEvent.clientY - box.top - h - 16;
+            tip.style.transform = 'translate(' + Math.max(8, x) + 'px,' +
+                Math.max(8, y) + 'px)';
+        }
+
+        function setHover(i) {
+            if (i === hovered) return;
+            if (i === null) {
+                if (hoverClearTimer === null) {
+                    hoverClearTimer = setTimeout(() => {
+                        hoverClearTimer = null;
+                        paintHover(null);
+                    }, HOVER_GRACE_MS);
+                }
+                return;
+            }
+            clearTimeout(hoverClearTimer);
+            hoverClearTimer = null;
+            paintHover(i);
         }
 
         function updatePointer(e) {
             const r = canvas.getBoundingClientRect();
             pointerInside = true;
+            lastPointerEvent = e;
             pointer.x = ((e.clientX - r.left) / r.width) * 2 - 1;
             pointer.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+            if (hovered !== null) renderTip();
         }
 
         canvas.addEventListener('pointermove', updatePointer);
         canvas.addEventListener('pointerleave', () => {
             pointerInside = false;
-            setHover(null);
+            clearTimeout(hoverClearTimer);
+            hoverClearTimer = null;
+            lastPointerEvent = null;
+            paintHover(null);
         });
 
         let downAt = null;
@@ -771,8 +1073,7 @@
                 document.getElementById('t-rotate').checked = false;
                 showCase(i);
             } else {
-                pinned = null;
-                inspector.hidden = true;
+                clearCase();
             }
         });
 
@@ -840,21 +1141,23 @@
         const dataActions = document.getElementById('data-actions');
         const live = location.protocol.startsWith('http');
 
+        // The note is for things the user has to act on — an error, or the reason
+        // uploading is unavailable. Narrating a successful load back at them
+        // ("Loaded mock_mm_minutes.xlsx · 100 cases") is product noise; the case
+        // count is already a KPI at the top of the screen.
         function setNote(text, bad) {
-            note.innerHTML = text;
+            note.innerHTML = text || '';
+            note.hidden = !text;
             note.classList.toggle('bad', !!bad);
         }
 
         if (live) {
             dataActions.hidden = false;
-            setNote('Loaded <b>' + (data.meta.source_file || 'demo data') + '</b> · ' +
-                data.meta.n_cases + ' cases. Columns are matched automatically.');
         } else {
             drop.setAttribute('aria-disabled', 'true');
             drop.style.opacity = '0.5';
             drop.style.cursor = 'not-allowed';
-            setNote('Uploading needs the local workbench. Run <b>python serve.py</b> ' +
-                'and open the address it prints.');
+            setNote('Uploading needs the local workbench: run <b>python serve.py</b>.');
         }
 
         async function ingest(file) {
@@ -902,6 +1205,66 @@
         addEventListener('dragover', e => e.preventDefault());
         addEventListener('drop', e => e.preventDefault());
 
+        /* Changing the number of galaxies is a clustering decision, not a filter:
+           it needs the embeddings, which live in Python. So the control calls the
+           workbench and rebuilds, rather than pretending to work in the browser. */
+
+        const kInput = document.getElementById('kval');
+        const kApply = document.getElementById('kapply');
+        const kNote = document.getElementById('k-note');
+
+        kInput.value = data.meta.n_clusters;
+
+        if (!live) {
+            kApply.disabled = true;
+            kInput.disabled = true;
+            kNote.hidden = false;
+            kNote.innerHTML = 'Re-clustering needs the workbench: run ' +
+                '<b>python serve.py</b>.';
+        }
+
+        const clampK = v => Math.max(2, Math.min(12, v));
+        document.getElementById('k-down').addEventListener('click', () => {
+            kInput.value = clampK(Number(kInput.value) - 1);
+            kNote.hidden = true;
+        });
+        document.getElementById('k-up').addEventListener('click', () => {
+            kInput.value = clampK(Number(kInput.value) + 1);
+            kNote.hidden = true;
+        });
+
+        kApply.addEventListener('click', async () => {
+            if (!live) return;
+            const k = Math.max(2, Math.min(12, Number(kInput.value) || 5));
+            if (k === data.meta.n_clusters) {
+                kNote.hidden = false;
+                kNote.textContent = 'Already showing ' + k + ' galaxies.';
+                return;
+            }
+            kApply.disabled = true;
+            kApply.textContent = 'Working…';
+            busyMain.textContent = 'Regrouping ' + data.meta.n_cases + ' cases into ' +
+                k + ' groups…';
+            busy.hidden = false;
+            try {
+                const res = await fetch('/api/clusters', {
+                    method: 'PUT',
+                    headers: { 'X-Clusters': String(k) }
+                });
+                const out = await res.json();
+                if (!res.ok) throw new Error(out.detail ? out.error + ' — ' + out.detail
+                    : out.error || ('HTTP ' + res.status));
+                location.reload();
+            } catch (err) {
+                busy.hidden = true;
+                kApply.disabled = false;
+                kApply.textContent = 'Regroup';
+                kNote.hidden = false;
+                kNote.classList.add('bad');
+                kNote.textContent = String(err.message || err);
+            }
+        });
+
         document.getElementById('restore').addEventListener('click', async () => {
             if (!live) return;
             busyMain.textContent = 'Restoring the demo dataset…';
@@ -917,7 +1280,57 @@
             }
         });
 
+        /* ---------------- Explainers ----------------
+           One shared balloon, appended to <body> and positioned on demand. A CSS
+           ::after balloon is clipped by any scrolling ancestor and loses to the
+           header's stacking context — which is exactly what happened to the rail
+           and status-bar tooltips. A single fixed element has neither problem. */
+
+        const balloon = document.createElement('div');
+        balloon.className = 'balloon';
+        balloon.hidden = true;
+        document.body.appendChild(balloon);
+
+        function showBalloon(host) {
+            balloon.textContent = host.dataset.tip.replace(/\s+/g, ' ').trim();
+            balloon.hidden = false;
+            const r = host.getBoundingClientRect();
+            const b = balloon.getBoundingClientRect();
+            let left = r.left + r.width / 2 - b.width / 2;
+            left = Math.max(10, Math.min(left, innerWidth - b.width - 10));
+            // Prefer above; flip below when there is not room.
+            let top = r.top - b.height - 10;
+            if (top < 10) top = r.bottom + 10;
+            balloon.style.left = left + 'px';
+            balloon.style.top = top + 'px';
+        }
+
+        function hideBalloon() { balloon.hidden = true; }
+
+        function wireExplainers(root) {
+            root.querySelectorAll('[data-tip]').forEach(host => {
+                if (host.dataset.wired) return;
+                host.dataset.wired = '1';
+                host.addEventListener('pointerenter', () => showBalloon(host));
+                host.addEventListener('focus', () => showBalloon(host));
+                host.addEventListener('pointerleave', hideBalloon);
+                host.addEventListener('blur', hideBalloon);
+                host.addEventListener('click', e => e.stopPropagation());
+            });
+        }
+        wireExplainers(document);
+        addEventListener('scroll', hideBalloon, true);
+
         /* ---------------- Loop ---------------- */
+
+        /* Only one rail section is open at a time. Two open sections can outgrow
+           the rail on a short laptop screen, and a scrollbar on a filter panel is
+           friction the user should never have to fight. */
+        const sects = [...document.querySelectorAll('.rail .sect')];
+        sects.forEach(d => d.addEventListener('toggle', () => {
+            if (!d.open) return;
+            sects.forEach(o => { if (o !== d) o.open = false; });
+        }));
 
         applyFilters();
 
