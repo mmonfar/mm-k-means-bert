@@ -65,7 +65,8 @@ On macOS/Linux the activate step is `source venv/bin/activate`.
 |---|---|
 | `python data_generator.py` | writes `mock_mm_minutes.xlsx` — 100 synthetic M&M cases across 5 failure modes, with semantic traps baked in |
 | `python engine.py` | the pipeline: ingest → embed → cluster → project → `app/data.json` (+ injection into `app/index.html`) |
-| `python engine.py --input input_mm_data.xlsx` | run it against your own de-identified extract |
+| `python engine.py --input export.csv` | run it against your own de-identified extract (.xlsx/.xls/.xlsm/.csv/.tsv) |
+| `python engine.py --input x.csv --text-col "What happened"` | name a column explicitly when the synonym table misses it |
 | `python engine.py --clusters 7 --projection pca` | change k, or force a projection backend |
 | `python marketing/generate_promo_viz.py --mp4` | render `marketing/visual_preview.gif` (and `.mp4`) for LinkedIn |
 | `pytest -q` | full contract suite |
@@ -79,19 +80,44 @@ Every run after that is fully offline.
 
 ## Using your own data
 
-Point `--input` at any `.xlsx` with these columns:
+Point `--input` at a spreadsheet or a delimited text file:
 
-| Column | Type | Notes |
+```bash
+python engine.py --input "C:/exports/datix_q3.csv"
+```
+
+**Accepted formats:** `.xlsx`, `.xlsm`, `.xls`, `.csv`, `.tsv`, `.txt`. CSVs are sniffed
+for delimiter (`,` `;` tab `|`) and read as UTF-8, then cp1252, then latin-1 — so an
+export straight out of Excel on Windows opens without you converting anything.
+
+**You do not need to rename your columns.** Headers are matched case- and
+punctuation-insensitively against a synonym table, so `Datix Ref`, `Date of Incident`,
+`Specialty`, `What Happened?` and `Grade of Harm` all map themselves:
+
+| Wanted | Also accepts | If absent |
 |---|---|---|
-| `Case_ID` | text | any unique reference |
-| `Date` | date | parsed leniently; blanks tolerated |
-| `Department` | text | free text, used for the case card only |
-| `Case_Summary` | text | **the only column that is embedded** |
-| `Severity_Score` | int 1–5 | drives star size; out-of-range values are clipped |
+| `Case_ID` | ref, reference, case no, incident id, datix ref, number | auto-numbered `ROW-0001` |
+| `Date` | incident date, event date, date of incident, reported date | left blank |
+| `Department` | dept, specialty, service, directorate, division, ward | `Unspecified` |
+| `Case_Summary` | summary, narrative, description, what happened, free text, details | **required** — falls back to the widest text column, or use `--text-col` |
+| `Severity_Score` | severity, harm, grade of harm, harm level, impact, risk score | `3` |
+
+`Severity_Score` accepts numbers **or** words — `None`/`Low`/`Moderate`/`Major`/
+`Catastrophic` map to 1–5. (`None` means no harm, and is deliberately not treated as a
+blank cell.)
+
+When a column is named something the synonym table has never seen, name it yourself:
+
+```bash
+python engine.py --input minutes.xlsx --text-col "Discussion notes" --dept-col Directorate
+```
+
+`--id-col`, `--date-col` and `--severity-col` work the same way. If `k` is larger than
+your row count, the engine reduces it rather than failing.
 
 > **De-identify upstream.** The engine has no scrubbing stage and makes no claim to
-> anonymise anything. `.gitignore` ignores every spreadsheet by default for exactly this
-> reason — only the synthetic `mock_mm_minutes.xlsx` is re-admitted.
+> anonymise anything. `.gitignore` ignores every spreadsheet and CSV — including the
+> synthetic mock — so nothing tabular can be committed by accident.
 
 ---
 
@@ -105,9 +131,27 @@ Point `--input` at any `.xlsx` with these columns:
 | A star drifting between two galaxies | a case that failed in two ways at once — usually the most instructive one in the room |
 | A big star | high severity (`Severity_Score` 4–5) |
 
-**Controls:** drag to orbit · scroll to zoom · hover to preview · click to pin a case ·
-click a legend entry to isolate one galaxy · switch Amplified/True geometry · click a
-nearest-case row to fly to it · `R` to reset the view.
+### The control rail
+
+The left rail is the working surface, not decoration:
+
+| Control | What it does |
+|---|---|
+| **Search** (`/` to focus, `Esc` to clear) | live filter across case text, ID and department |
+| **Failure galaxies** | click one to isolate it; shows measured size and cohesion |
+| **Minimum severity** | floor the view at 1–5 |
+| **Departments** | click a chip to mute that department |
+| **Geometry** | Amplified ⇄ True, with the standing caveat |
+| **View** | auto-rotate, ambient starfield, depth fade, size-by-severity |
+| **Export CSV** | downloads exactly what is on screen, cluster label included |
+| **‹ toggle** | collapses the rail for a clean full-screen field |
+
+Filters compose: search + severity floor + muted departments + isolated galaxy all apply
+at once, and the footer reads `N of 100 cases` so you always know what you are looking at.
+A case that has been filtered out cannot be hovered, clicked or exported.
+
+**Canvas:** drag to orbit · scroll to zoom · hover to preview · click to pin a case ·
+click a nearest-case row to fly to it · `R` to reset the view.
 
 ### Measured distance vs. drawn distance
 
@@ -159,15 +203,15 @@ mm-k-means-bert/
 ├── requirements.txt
 ├── data_generator.py         synthetic 100-case M&M corpus
 ├── engine.py                 the pipeline compiler
-├── mock_mm_minutes.xlsx      generated
+├── mock_mm_minutes.xlsx      generated (git-ignored)
 ├── app/                      the static deliverable — deploy this folder alone
 │   ├── index.html            Three.js galaxy canvas
-│   ├── data.json             generated payload
+│   ├── data.json             generated payload (git-ignored)
 │   └── assets/styles.css     mmonfar. brand system
 ├── marketing/
 │   ├── linkedin_post.txt
 │   ├── generate_promo_viz.py
-│   └── visual_preview.gif    generated
+│   └── visual_preview.gif    generated (git-ignored)
 └── tests/test_pipeline.py
 ```
 

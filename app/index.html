@@ -21,17 +21,45 @@
     <div id="vignette"></div>
 
     <header id="brand">
-        <div class="wordmark">mmonfar<span class="dot">.</span></div>
+        <div class="wordmark">
+            <span class="wordmark-mask"><span class="wordmark-text">mmonfar</span></span><span
+                class="dot">.</span>
+        </div>
         <div class="rule"></div>
         <div class="eyebrow">Semantic M&amp;M Failure Navigation</div>
     </header>
 
-    <nav id="legend" class="panel" aria-label="Failure galaxies">
-        <h2>Failure Galaxies</h2>
-        <div id="legend-items"></div>
+    <button type="button" id="rail-toggle" aria-expanded="true" aria-controls="rail"
+        title="Hide controls (Tab)">‹</button>
 
-        <div id="geometry">
-            <h2>Geometry</h2>
+    <aside id="rail" class="panel" aria-label="Controls">
+
+        <div class="rail-search">
+            <input type="search" id="q" placeholder="Search case text, ID, department…"
+                aria-label="Search cases" autocomplete="off" spellcheck="false">
+            <kbd>/</kbd>
+        </div>
+
+        <details class="sect" open>
+            <summary><span>Failure galaxies</span><span class="chev">›</span></summary>
+            <div id="legend-items"></div>
+        </details>
+
+        <details class="sect" open>
+            <summary><span>Filters</span><span class="chev">›</span></summary>
+
+            <label class="field" for="sev">
+                <span class="field-label">Minimum severity</span>
+                <span class="field-val" id="sev-val">1 — all cases</span>
+            </label>
+            <input type="range" id="sev" min="1" max="5" step="1" value="1">
+
+            <div class="field-label field-gap">Departments</div>
+            <div class="chips" id="dept-chips"></div>
+        </details>
+
+        <details class="sect" open>
+            <summary><span>Geometry</span><span class="chev">›</span></summary>
             <div class="seg" role="radiogroup" aria-label="Coordinate geometry">
                 <button type="button" id="geo-amp" class="seg-btn is-on" role="radio"
                     aria-checked="true">Amplified</button>
@@ -39,8 +67,27 @@
                     aria-checked="false">True</button>
             </div>
             <p class="caveat" id="geo-caveat"></p>
+        </details>
+
+        <details class="sect">
+            <summary><span>View</span><span class="chev">›</span></summary>
+            <label class="switch"><input type="checkbox" id="t-rotate" checked>
+                <span>Auto-rotate</span></label>
+            <label class="switch"><input type="checkbox" id="t-stars" checked>
+                <span>Ambient starfield</span></label>
+            <label class="switch"><input type="checkbox" id="t-depth" checked>
+                <span>Depth fade</span></label>
+            <label class="switch"><input type="checkbox" id="t-sev" checked>
+                <span>Size by severity</span></label>
+        </details>
+
+        <div class="rail-foot">
+            <span id="count">—</span>
+            <button type="button" id="export" title="Download the filtered cases as CSV">
+                Export CSV
+            </button>
         </div>
-    </nav>
+    </aside>
 
     <article id="case" class="panel" aria-live="polite">
         <div class="case-head">
@@ -81,7 +128,7 @@
     <div id="hint" class="panel">
         <b>drag</b> orbit &nbsp;·&nbsp; <b>scroll</b> zoom<br>
         <b>hover</b> preview &nbsp;·&nbsp; <b>click</b> pin<br>
-        <b>legend</b> isolate &nbsp;·&nbsp; <b>R</b> reset view
+        <b>/</b> search &nbsp;·&nbsp; <b>esc</b> clear &nbsp;·&nbsp; <b>R</b> reset view
     </div>
 
     <div id="loader">Building semantic galaxy…</div>
@@ -109,7 +156,7 @@
   "true_geometry_note": "Switch the canvas to TRUE geometry to see the projection with no amplification applied. Measured semantic distance is reported per case as cosine similarity in the full 384-dimensional space, which no projection can distort.",
   "variance_retained": 0.14352354407310486,
   "variance_note": "Share of the embedding variance surviving the squash to 3 axes. The rest is lost, which is why on-screen proximity is a hint and the cosine figures on each case card are the measurement.",
-  "generated": "2026-08-26 21:41"
+  "generated": "2026-08-26 22:22"
  },
  "departments": [
   "Acute Medicine",
@@ -3126,7 +3173,7 @@
 
         /* ---------------- Ambient starfield (parallax reference) ---------------- */
 
-        (function ambient() {
+        const ambientPoints = (function ambient() {
             const N = 1400;
             const pos = new Float32Array(N * 3);
             for (let i = 0; i < N; i++) {
@@ -3137,13 +3184,15 @@
                 pos[i * 3 + 1] = r * Math.sin(p) * Math.sin(t);
                 pos[i * 3 + 2] = r * Math.cos(p);
             }
-            const geo = new THREE.BufferGeometry();
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-            scene.add(new THREE.Points(geo, new THREE.PointsMaterial({
+            const ambientGeo = new THREE.BufferGeometry();
+            ambientGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            const cloud = new THREE.Points(ambientGeo, new THREE.PointsMaterial({
                 color: 0xFDFBF7, size: 1.5, sizeAttenuation: true,
                 transparent: true, opacity: 0.28, depthWrite: false,
                 map: sprite, blending: THREE.AdditiveBlending
-            })));
+            }));
+            scene.add(cloud);
+            return cloud;
         })();
 
         /* ---------------- Case stars ---------------- */
@@ -3290,8 +3339,34 @@
         geoTrue.addEventListener('click', () => setGeometry(true));
         setGeometry(false);
 
+        /* ---------------- Filter pipeline ----------------
+           One predicate drives everything: the dim buffer, the pick test, the
+           visible counter and the CSV export. A case is visible when it passes the
+           galaxy isolate, the severity floor, the department chips and the search
+           box simultaneously. */
+
         const legendBox = document.getElementById('legend-items');
+        const deptBox = document.getElementById('dept-chips');
+        const countEl = document.getElementById('count');
+        const sevInput = document.getElementById('sev');
+        const sevVal = document.getElementById('sev-val');
+        const qInput = document.getElementById('q');
+
         let isolated = null;
+        let minSev = 1;
+        let query = '';
+        const mutedDepts = new Set();
+        const visible = new Uint8Array(n).fill(1);
+
+        const departments = data.departments && data.departments.length
+            ? data.departments
+            : [...new Set(points.map(p => p.department))].sort();
+
+        // Pre-lowercased haystack per case: search runs on every keystroke and
+        // re-lowercasing a hundred narratives each time is wasted work.
+        const haystack = points.map(p =>
+            (p.id + ' ' + p.department + ' ' + p.summary).toLowerCase()
+        );
 
         clusters.forEach(c => {
             const b = document.createElement('button');
@@ -3301,34 +3376,150 @@
             // Cohesion is measured, so it is stated as a number rather than implied
             // by how tight the galaxy happens to look after amplification.
             const cohesion = c.cohesion == null ? '' :
-                ` · cohesion ${c.cohesion.toFixed(2)}`;
+                ' \u00b7 cohesion ' + c.cohesion.toFixed(2);
             const adjacent = c.nearest_similarity == null ? '' :
-                `<span class="galaxy-adj">nearest galaxy ` +
-                `${c.nearest_similarity.toFixed(2)} similar</span>`;
+                '<span class="galaxy-adj">nearest galaxy ' +
+                c.nearest_similarity.toFixed(2) + ' similar</span>';
             b.innerHTML =
-                `<span class="swatch" style="color:${c.color}"></span>` +
-                `<span><span class="galaxy-name">${c.label}</span>` +
-                `<span class="galaxy-count">${c.size} cases${cohesion}</span>` +
-                adjacent + `</span>`;
+                '<span class="swatch" style="color:' + c.color + '"></span>' +
+                '<span><span class="galaxy-name">' + c.label + '</span>' +
+                '<span class="galaxy-count">' + c.size + ' cases' + cohesion + '</span>' +
+                adjacent + '</span>';
             b.addEventListener('click', () => {
                 isolated = (isolated === c.id) ? null : c.id;
-                applyIsolation();
+                applyFilters();
             });
             legendBox.appendChild(b);
         });
 
-        function applyIsolation() {
+        departments.forEach(dep => {
+            const b = document.createElement('button');
+            b.className = 'chip';
+            b.type = 'button';
+            b.textContent = dep;
+            b.setAttribute('aria-pressed', 'true');
+            b.addEventListener('click', () => {
+                if (mutedDepts.has(dep)) mutedDepts.delete(dep); else mutedDepts.add(dep);
+                b.setAttribute('aria-pressed', String(!mutedDepts.has(dep)));
+                applyFilters();
+            });
+            deptBox.appendChild(b);
+        });
+
+        function passes(i) {
+            const p = points[i];
+            if (isolated !== null && p.cluster !== isolated) return false;
+            if (p.severity < minSev) return false;
+            if (mutedDepts.has(p.department)) return false;
+            if (query && !haystack[i].includes(query)) return false;
+            return true;
+        }
+
+        function applyFilters() {
+            let shown = 0;
+            for (let i = 0; i < n; i++) {
+                const ok = passes(i);
+                visible[i] = ok ? 1 : 0;
+                dim[i] = ok ? 1 : 0.05;
+                if (ok) shown++;
+            }
+            geo.attributes.aDim.needsUpdate = true;
+
             const buttons = [...legendBox.querySelectorAll('.galaxy')];
             clusters.forEach((c, idx) => {
                 buttons[idx].setAttribute(
                     'aria-pressed', String(isolated === null || isolated === c.id)
                 );
             });
-            for (let i = 0; i < n; i++) {
-                dim[i] = (isolated === null || points[i].cluster === isolated) ? 1 : 0.08;
+
+            countEl.textContent = shown === n
+                ? n + ' cases'
+                : shown + ' of ' + n + ' cases';
+            countEl.classList.toggle('is-filtered', shown !== n);
+
+            // A pinned case that has just been filtered out should not keep its card.
+            if (pinned !== null && !visible[pinned]) {
+                pinned = null;
+                caseEl.classList.remove('visible');
             }
-            geo.attributes.aDim.needsUpdate = true;
         }
+
+        sevInput.addEventListener('input', () => {
+            minSev = Number(sevInput.value);
+            sevVal.textContent = minSev === 1
+                ? '1 \u2014 all cases'
+                : minSev + ' \u2014 ' + '\u25cf'.repeat(minSev) +
+                  '\u25cb'.repeat(5 - minSev) + ' and above';
+            applyFilters();
+        });
+
+        let queryTimer = null;
+        qInput.addEventListener('input', () => {
+            clearTimeout(queryTimer);
+            queryTimer = setTimeout(() => {
+                query = qInput.value.trim().toLowerCase();
+                applyFilters();
+            }, 90);
+        });
+
+        /* ---------------- View toggles ---------------- */
+
+        document.getElementById('t-rotate').addEventListener('change', e => {
+            controls.autoRotate = e.target.checked;
+        });
+        document.getElementById('t-stars').addEventListener('change', e => {
+            ambientPoints.visible = e.target.checked;
+        });
+        document.getElementById('t-depth').addEventListener('change', e => {
+            material.uniforms.uFogDensity.value = e.target.checked ? 0.0022 : 0.0;
+        });
+        document.getElementById('t-sev').addEventListener('change', e => {
+            for (let i = 0; i < n; i++) {
+                baseSizes[i] = e.target.checked ? 6 + points[i].severity * 2.2 : 11;
+                if (i !== hovered) sizes[i] = baseSizes[i];
+            }
+            geo.attributes.aSize.needsUpdate = true;
+        });
+
+        /* ---------------- Export ----------------
+           Whatever is on screen is what lands in the file, cluster label included,
+           so a filtered view can go straight into a governance pack. */
+
+        document.getElementById('export').addEventListener('click', () => {
+            const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+            const head = [
+                'Case_ID', 'Date', 'Department', 'Severity_Score',
+                'Cluster_ID', 'Cluster_Label', 'Case_Summary'
+            ];
+            const rows = [head.join(',')];
+            for (let i = 0; i < n; i++) {
+                if (!visible[i]) continue;
+                const p = points[i];
+                const c = clusters.find(c => c.id === p.cluster) || { label: '' };
+                rows.push([
+                    p.id, p.date, p.department, p.severity, p.cluster, c.label, p.summary
+                ].map(esc).join(','));
+            }
+            // BOM so Excel opens the UTF-8 correctly on a Windows machine.
+            const blob = new Blob(['\ufeff' + rows.join('\r\n')],
+                { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'mm_galaxy_export.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        });
+
+        /* ---------------- Rail collapse ---------------- */
+
+        const rail = document.getElementById('rail');
+        const railToggle = document.getElementById('rail-toggle');
+        railToggle.addEventListener('click', () => {
+            const open = !rail.classList.toggle('collapsed');
+            railToggle.setAttribute('aria-expanded', String(open));
+            railToggle.textContent = open ? '\u2039' : '\u203a';
+            railToggle.title = open ? 'Hide controls' : 'Show controls';
+        });
 
         // Ctrl-F / screen-reader fallback copy of the payload.
         const a11y = document.getElementById('a11y-list');
@@ -3433,8 +3624,9 @@
             raycaster.setFromCamera(pointer, camera);
             const hits = raycaster.intersectObject(stars);
             if (!hits.length) return null;
-            // Nearest hit that is not dimmed out by an active isolation filter.
-            const hit = hits.find(h => dim[h.index] > 0.5);
+            // Nearest hit that survives the current filters — a faded-out case
+            // must not be selectable, or the card contradicts the view.
+            const hit = hits.find(h => visible[h.index]);
             return hit ? hit.index : null;
         }
 
@@ -3486,6 +3678,25 @@
         });
 
         addEventListener('keydown', e => {
+            const typing = e.target instanceof HTMLInputElement;
+
+            if (e.key === '/' && !typing) {
+                e.preventDefault();
+                qInput.focus();
+                qInput.select();
+                return;
+            }
+            if (e.key === 'Escape') {
+                if (qInput.value) {
+                    qInput.value = '';
+                    query = '';
+                    applyFilters();
+                }
+                qInput.blur();
+                return;
+            }
+            if (typing) return;
+
             if (e.key === 'r' || e.key === 'R') {
                 flight = null;
                 camera.position.copy(HOME);
@@ -3501,6 +3712,8 @@
         });
 
         /* ---------------- Loop ---------------- */
+
+        applyFilters();
 
         function frame() {
             requestAnimationFrame(frame);

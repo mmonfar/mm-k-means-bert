@@ -6,11 +6,18 @@ Batch compiler. Reads a spreadsheet of M&M minutes, turns the free text into a s
 map, and emits a static JSON payload that the Three.js canvas in `app/` renders without
 ever calling back into Python.
 
-    Excel -> MiniLM embeddings (384-d) -> KMeans(k=5) -> UMAP/PCA(3-d) -> app/data.json
+    Excel/CSV -> MiniLM embeddings (384-d) -> KMeans(k=5) -> UMAP/PCA(3-d)
+              -> app/data.json
+
+Accepts .xlsx, .xlsm, .xls, .csv, .tsv and .txt. Column headers are matched against a
+synonym table (case- and punctuation-insensitive), so a real hospital export usually
+works with no flags; --text-col and friends override when it does not.
 
 Usage:
     python engine.py
-    python engine.py --input mock_mm_minutes.xlsx --clusters 5 --projection auto
+    python engine.py --input datix_export.csv
+    python engine.py --input minutes.xlsx --text-col "What happened" --dept-col Specialty
+    python engine.py --clusters 7 --projection pca
 
 Everything runs locally on CPU. The only network access is the one-off download of the
 `all-MiniLM-L6-v2` weights (~90 MB) into the HuggingFace cache on first run.
@@ -73,33 +80,214 @@ def _stopwords() -> list[str]:
 # 1. Ingest
 # --------------------------------------------------------------------------------------
 
-def load_minutes(path: Path) -> pd.DataFrame:
-    """Read the spreadsheet and enforce the column contract."""
+SPREADSHEET_SUFFIXES = {".xlsx", ".xlsm", ".xls"}
+DELIMITED_SUFFIXES = {".csv", ".tsv", ".txt"}
+
+# Header synonyms. Nobody's real M&M export uses our column names, and asking a
+# governance lead to rename columns before they can try the tool is how a tool goes
+# unused. Matching is done on a squashed key: lowercased, non-alphanumerics stripped.
+COLUMN_SYNONYMS: dict[str, list[str]] = {
+    "Case_ID": [
+        "caseid", "case", "id", "ref", "reference", "casereference", "casenumber",
+        "caseno", "incidentid", "incidentref", "datixref", "datixid", "number",
+    ],
+    "Date": [
+        "date", "casedate", "incidentdate", "dateofincident", "eventdate",
+        "dateofevent", "meetingdate", "reporteddate", "when",
+    ],
+    "Department": [
+        "department", "dept", "specialty", "speciality", "service", "directorate",
+        "division", "ward", "unit", "team", "location",
+    ],
+    "Case_Summary": [
+        "casesummary", "summary", "narrative", "description", "details", "text",
+        "freetext", "incidentdescription", "whathappened", "notes", "comment",
+        "comments", "learning", "discussion", "body",
+    ],
+    "Severity_Score": [
+        "severityscore", "severity", "harm", "harmscore", "harmlevel", "grade",
+        "gradeofharm", "impact", "riskscore", "score", "outcome",
+    ],
+}
+
+# pandas treats the literal string "None" as missing by default. In a harm column
+# "None" means no harm — grade 1 — not a blank, so it is removed from the NA list.
+NA_STRINGS = [
+    "", "#N/A", "#N/A N/A", "#NA", "-1.#IND", "-1.#QNAN", "-NaN", "-nan",
+    "1.#IND", "1.#QNAN", "<NA>", "N/A", "NA", "NULL", "NaN", "n/a", "nan", "null",
+]
+
+# Words people actually type into a harm column, mapped onto the 1-5 scale.
+SEVERITY_WORDS = {
+    "none": 1, "nil": 1, "nearmiss": 1, "near miss": 1, "no harm": 1, "noharm": 1,
+    "negligible": 1, "insignificant": 1, "minimal": 1,
+    "low": 2, "minor": 2, "slight": 2,
+    "moderate": 3, "medium": 3, "significant": 3,
+    "major": 4, "high": 4, "severe": 4, "serious": 4,
+    "catastrophic": 5, "death": 5, "fatal": 5, "extreme": 5, "critical": 5,
+}
+
+
+def _squash(name: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+
+def resolve_columns(
+    df: pd.DataFrame, overrides: dict[str, str] | None = None
+) -> dict[str, str | None]:
+    """Map our canonical column names onto whatever the file actually calls them.
+
+    Returns {canonical: actual_column_or_None}. Only `Case_Summary` is genuinely
+    required — everything else degrades to a sensible default, because a department
+    column is nice to have and a summary column is the entire product.
+    """
+    overrides = overrides or {}
+    squashed = {_squash(c): c for c in df.columns}
+    resolved: dict[str, str | None] = {}
+
+    for canonical, synonyms in COLUMN_SYNONYMS.items():
+        chosen = overrides.get(canonical)
+        if chosen:
+            if chosen not in df.columns:
+                raise ValueError(
+                    f"--{canonical.lower().replace('_', '-')} {chosen!r} is not a column "
+                    f"in the file. Available: {list(df.columns)}"
+                )
+            resolved[canonical] = chosen
+            continue
+
+        hit = squashed.get(_squash(canonical))
+        if hit is None:
+            for syn in synonyms:
+                if syn in squashed:
+                    hit = squashed[syn]
+                    break
+        if hit is None:
+            # Last resort for the one column we cannot do without: the widest text
+            # column in the file is almost always the narrative.
+            if canonical == "Case_Summary":
+                text_cols = [
+                    c for c in df.columns
+                    if df[c].dtype == object
+                    and df[c].astype(str).str.len().mean() > 40
+                ]
+                if text_cols:
+                    hit = max(text_cols, key=lambda c: df[c].astype(str).str.len().mean())
+        resolved[canonical] = hit
+
+    return resolved
+
+
+def read_tabular(path: Path) -> pd.DataFrame:
+    """Read .xlsx/.xlsm/.xls or .csv/.tsv/.txt into a DataFrame.
+
+    CSVs in the wild are exported from Excel on Windows and are frequently cp1252
+    rather than UTF-8, and are as likely to be semicolon- as comma-delimited, so both
+    are sniffed rather than assumed.
+    """
+    suffix = path.suffix.lower()
+
+    if suffix in SPREADSHEET_SUFFIXES:
+        return pd.read_excel(path)
+
+    if suffix in DELIMITED_SUFFIXES:
+        last: Exception | None = None
+        # Sniffing first, then explicit delimiters: the sniffer misreads a
+        # single-column file of prose, where punctuation outnumbers any real
+        # delimiter. Falling through to a plain comma read recovers that case.
+        for sep in (None, ",", ";", "\t"):
+            for encoding in ("utf-8-sig", "cp1252", "latin-1"):
+                try:
+                    return pd.read_csv(
+                        path,
+                        encoding=encoding,
+                        sep=sep,
+                        engine="python",
+                        skip_blank_lines=True,
+                        keep_default_na=False,
+                        na_values=NA_STRINGS,
+                    )
+                except (UnicodeDecodeError, pd.errors.ParserError, ValueError) as exc:
+                    last = exc
+        raise ValueError(f"Could not parse {path.name}: {last}")
+
+    raise ValueError(
+        f"Unsupported file type {suffix!r}. Use one of: "
+        + ", ".join(sorted(SPREADSHEET_SUFFIXES | DELIMITED_SUFFIXES))
+    )
+
+
+def coerce_severity(series: pd.Series) -> pd.Series:
+    """Coerce a harm column to ints 1-5, accepting numbers or words."""
+    numeric = pd.to_numeric(series, errors="coerce")
+    # Always try the word map. Dtype is not a reliable guide here: pandas hands back
+    # StringDtype, object or category depending on the reader and the pandas version.
+    words = series.astype(str).str.strip().str.lower().map(SEVERITY_WORDS)
+    return (
+        numeric.astype("float64")
+        .fillna(words.astype("float64"))
+        .fillna(3)
+        .clip(1, 5)
+        .astype(int)
+    )
+
+
+def load_minutes(path: Path, overrides: dict[str, str] | None = None) -> pd.DataFrame:
+    """Read a spreadsheet or CSV and normalise it onto the column contract."""
     if not path.exists():
         raise FileNotFoundError(
             f"{path} not found. Run `python data_generator.py` first, or pass --input."
         )
 
-    df = pd.read_excel(path)
-    missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
-    if missing:
-        raise ValueError(f"{path.name} is missing required column(s): {missing}")
+    raw = read_tabular(path)
+    if raw.empty:
+        raise ValueError(f"{path.name} has no rows.")
+
+    mapping = resolve_columns(raw, overrides)
+    if mapping["Case_Summary"] is None:
+        raise ValueError(
+            f"{path.name}: could not find a free-text summary column. Point at it "
+            f"explicitly with --text-col. Available columns: {list(raw.columns)}"
+        )
+
+    df = pd.DataFrame(index=raw.index)
+    df["Case_Summary"] = raw[mapping["Case_Summary"]]
+
+    if mapping["Case_ID"] is not None:
+        df["Case_ID"] = raw[mapping["Case_ID"]].astype(str)
+    else:
+        df["Case_ID"] = [f"ROW-{i + 1:04d}" for i in range(len(raw))]
+
+    df["Department"] = (
+        raw[mapping["Department"]] if mapping["Department"] else "Unspecified"
+    )
+    df["Date"] = raw[mapping["Date"]] if mapping["Date"] else pd.NaT
+    df["Severity_Score"] = (
+        raw[mapping["Severity_Score"]] if mapping["Severity_Score"] else 3
+    )
+    df = df[REQUIRED_COLUMNS]
+
+    renamed = {k: v for k, v in mapping.items() if v is not None and v != k}
+    if renamed:
+        print("      mapped cols : " + ", ".join(f"{v!r} -> {k}" for k, v in renamed.items()))
+    defaulted = [k for k, v in mapping.items() if v is None]
+    if defaulted:
+        print(f"      defaulted   : {', '.join(defaulted)} (not present in the file)")
 
     df = df.dropna(subset=["Case_Summary"]).copy()
     df["Case_Summary"] = df["Case_Summary"].astype(str).str.strip()
     df = df[df["Case_Summary"].str.len() > 0].reset_index(drop=True)
 
-    df["Severity_Score"] = (
-        pd.to_numeric(df["Severity_Score"], errors="coerce").fillna(3).clip(1, 5).astype(int)
-    )
-    df["Department"] = df["Department"].fillna("Unspecified").astype(str)
+    df["Severity_Score"] = coerce_severity(df["Severity_Score"])
+    df["Department"] = df["Department"].fillna("Unspecified").astype(str).str.strip()
+    df.loc[df["Department"] == "", "Department"] = "Unspecified"
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 
     if len(df) < 10:
         raise ValueError(f"Only {len(df)} usable rows — need at least 10 to cluster.")
 
     print(f"[1/5] ingest      : {len(df)} cases from {path.name}")
-    return df
+    return df.reset_index(drop=True)
 
 
 # --------------------------------------------------------------------------------------
@@ -481,9 +669,16 @@ def run(
     k: int = 5,
     projection_mode: str = "auto",
     seed: int = 42,
+    overrides: dict[str, str] | None = None,
 ) -> dict:
-    df = load_minutes(input_path)
+    df = load_minutes(input_path, overrides)
     texts = df["Case_Summary"].tolist()
+
+    # Someone pointing this at a 30-case departmental export should not hit a
+    # scikit-learn traceback because the default k does not fit their data.
+    if k > len(df):
+        print(f"      note        : k={k} exceeds {len(df)} cases; using k={max(2, len(df) // 4)}")
+        k = max(2, len(df) // 4)
 
     matrix = embed(texts)
     labels, silhouette = cluster(matrix, k=k, seed=seed)
@@ -525,15 +720,39 @@ def run(
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Compile M&M minutes into a semantic galaxy.")
-    ap.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    ap = argparse.ArgumentParser(
+        description="Compile M&M minutes (.xlsx/.xls/.xlsm/.csv/.tsv) into a semantic galaxy.",
+        epilog=(
+            "Column names are matched case- and punctuation-insensitively against a list "
+            "of common synonyms, so most real exports work with no flags at all. Use the "
+            "--*-col flags when a column is named something unusual."
+        ),
+    )
+    ap.add_argument("--input", type=Path, default=DEFAULT_INPUT,
+                    help="path to a spreadsheet or delimited text file")
     ap.add_argument("--clusters", type=int, default=5)
     ap.add_argument("--projection", choices=["auto", "umap", "pca"], default="auto")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--text-col", help="column holding the free-text case summary")
+    ap.add_argument("--id-col", help="column holding the case reference")
+    ap.add_argument("--date-col", help="column holding the case date")
+    ap.add_argument("--dept-col", help="column holding the department/specialty")
+    ap.add_argument("--severity-col", help="column holding severity or harm (1-5, or words)")
     args = ap.parse_args()
 
+    overrides = {
+        k: v for k, v in {
+            "Case_Summary": args.text_col,
+            "Case_ID": args.id_col,
+            "Date": args.date_col,
+            "Department": args.dept_col,
+            "Severity_Score": args.severity_col,
+        }.items() if v
+    }
+
     try:
-        run(args.input, k=args.clusters, projection_mode=args.projection, seed=args.seed)
+        run(args.input, k=args.clusters, projection_mode=args.projection, seed=args.seed,
+            overrides=overrides)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[mmonfar.] error: {exc}", file=sys.stderr)
         raise SystemExit(1)

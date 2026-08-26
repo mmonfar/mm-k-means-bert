@@ -24,10 +24,15 @@ system is breaking.
 ## 2. Data Pipeline Flow
 
 ```
-┌──────────────────────┐
-│ Local Excel File     │  mock_mm_minutes.xlsx (or input_mm_data.xlsx)
-│ pandas.read_excel    │  Case_ID | Date | Department | Case_Summary | Severity_Score
-└──────────┬───────────┘
+┌──────────────────────────────────────────────┐
+│ Local tabular file                           │
+│ .xlsx .xlsm .xls .csv .tsv .txt              │
+│ delimiter + encoding sniffed for delimited   │
+│ headers resolved against a synonym table,    │
+│ overridable per column from the CLI          │
+│ -> Case_ID | Date | Department |             │
+│    Case_Summary | Severity_Score             │
+└──────────┬───────────────────────────────────┘
            │  Case_Summary column, list[str], n = 100
            ▼
 ┌──────────────────────────────────────────────┐
@@ -97,16 +102,16 @@ mm-k-means-bert/
 ├── requirements.txt
 ├── data_generator.py           # Phase 3.1 — mock clinical corpus
 ├── engine.py                   # Phase 3.2 — the pipeline compiler
-├── mock_mm_minutes.xlsx        # generated template mock (tracked)
+├── mock_mm_minutes.xlsx        # generated, git-ignored
 ├── app/
 │   ├── index.html              # Phase 3.3 — Three.js galaxy canvas
-│   ├── data.json               # generated payload
+│   ├── data.json               # generated, git-ignored
 │   └── assets/
 │       └── styles.css          # mmonfar. brand system
 ├── marketing/
 │   ├── linkedin_post.txt
 │   ├── generate_promo_viz.py
-│   └── visual_preview.gif      # generated
+│   └── visual_preview.gif      # generated, git-ignored
 └── tests/
     └── test_pipeline.py        # pytest contract tests
 ```
@@ -229,6 +234,24 @@ it survives deuteranopia and monochrome print.
 - `prefers-reduced-motion` disables the idle auto-rotation.
 - The full case list is also emitted into the DOM as a visually-hidden `<ul>` so the payload is
   reachable by screen readers and by Ctrl-F.
+
+---
+
+## 4.7 Ingest contract
+
+Only `Case_Summary` is genuinely required; every other column degrades to a documented
+default (`ROW-nnnn` ids, `NaT` dates, `Unspecified` department, severity `3`). This is
+deliberate: a department column is a nice-to-have and a narrative column is the entire
+product, so the tool should run on whatever a governance lead can export today rather
+than on a schema they have to build first.
+
+Resolution order per column: explicit CLI override → exact name → synonym table → (for
+`Case_Summary` only) the widest free-text column in the file → default. Every mapping and
+every defaulted column is printed at ingest, so the operator can see what was assumed.
+
+`Severity_Score` accepts integers or harm words. Note that pandas treats the literal
+string `"None"` as a missing value by default; in a harm column `"None"` means grade 1,
+so the reader overrides the NA list rather than silently defaulting those rows to 3.
 
 ---
 

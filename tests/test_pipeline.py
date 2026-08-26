@@ -77,6 +77,109 @@ def test_generator_is_deterministic():
     assert a == b
 
 
+# ---------------------------------------------------------------- ingest
+
+@pytest.fixture
+def corpus():
+    return data_generator.build_frame(rows=100, seed=42).drop(columns=["_ground_truth"])
+
+
+def _messy_export(corpus):
+    """A realistic hospital export: nothing named the way we would like."""
+    import pandas as pd
+
+    return pd.DataFrame({
+        "Datix Ref": corpus["Case_ID"],
+        "Date of Incident": corpus["Date"],
+        "Specialty": corpus["Department"],
+        "What Happened?": corpus["Case_Summary"],
+        "Grade of Harm": corpus["Severity_Score"].map(
+            {1: "None", 2: "Low", 3: "Moderate", 4: "Major", 5: "Catastrophic"}
+        ),
+    })
+
+
+@pytest.mark.parametrize("suffix", [".xlsx", ".csv", ".tsv"])
+def test_reads_every_supported_format(tmp_path, corpus, suffix):
+    target = tmp_path / f"minutes{suffix}"
+    if suffix == ".xlsx":
+        corpus.to_excel(target, index=False)
+    else:
+        corpus.to_csv(target, index=False, sep="\t" if suffix == ".tsv" else ",")
+
+    df = engine.load_minutes(target)
+    assert len(df) == 100
+    assert list(df.columns) == engine.REQUIRED_COLUMNS
+
+
+def test_rejects_unsupported_format(tmp_path):
+    target = tmp_path / "notes.docx"
+    target.write_text("nope", encoding="utf-8")
+    with pytest.raises(ValueError, match="Unsupported file type"):
+        engine.load_minutes(target)
+
+
+def test_maps_real_world_headers_without_flags(tmp_path, corpus):
+    target = tmp_path / "datix_export.csv"
+    _messy_export(corpus).to_csv(target, index=False, sep=";", encoding="cp1252")
+
+    df = engine.load_minutes(target)
+    assert len(df) == 100
+    assert df["Case_ID"].iloc[0] == corpus["Case_ID"].iloc[0]
+    assert df["Case_Summary"].iloc[0] == corpus["Case_Summary"].iloc[0]
+
+
+def test_worded_harm_column_becomes_a_1_to_5_score(tmp_path, corpus):
+    """'None' means no harm, not a missing value — pandas would call it NaN."""
+    target = tmp_path / "worded.csv"
+    _messy_export(corpus).to_csv(target, index=False)
+
+    df = engine.load_minutes(target)
+    assert set(df["Severity_Score"]) <= {1, 2, 3, 4, 5}
+    assert (df["Severity_Score"] == 1).any(), "'None' was swallowed as a missing value"
+    assert df["Severity_Score"].tolist() == corpus["Severity_Score"].tolist()
+
+
+def test_survives_a_file_with_only_a_text_column(tmp_path, corpus):
+    target = tmp_path / "bare.csv"
+    corpus[["Case_Summary"]].to_csv(target, index=False)
+
+    df = engine.load_minutes(target)
+    assert len(df) == 100
+    assert df["Case_ID"].iloc[0] == "ROW-0001"
+    assert (df["Department"] == "Unspecified").all()
+    assert (df["Severity_Score"] == 3).all()
+
+
+def test_explicit_column_overrides_win(tmp_path, corpus):
+    import pandas as pd
+
+    # Two plausible text columns: synonym matching would pick the wrong one.
+    frame = pd.DataFrame({
+        "Summary": ["short decoy text that is long enough to look plausible"] * 100,
+        "Full Narrative": corpus["Case_Summary"],
+    })
+    target = tmp_path / "ambiguous.csv"
+    frame.to_csv(target, index=False)
+
+    df = engine.load_minutes(target, {"Case_Summary": "Full Narrative"})
+    assert df["Case_Summary"].iloc[0] == corpus["Case_Summary"].iloc[0]
+
+
+def test_unknown_override_names_the_available_columns(tmp_path, corpus):
+    target = tmp_path / "minutes.csv"
+    corpus.to_csv(target, index=False)
+    with pytest.raises(ValueError, match="not a column"):
+        engine.load_minutes(target, {"Case_Summary": "Nope"})
+
+
+def test_refuses_a_file_too_small_to_cluster(tmp_path, corpus):
+    target = tmp_path / "tiny.csv"
+    corpus.head(4).to_csv(target, index=False)
+    with pytest.raises(ValueError, match="need at least 10"):
+        engine.load_minutes(target)
+
+
 # ---------------------------------------------------------------- geometry
 
 @pytest.fixture
