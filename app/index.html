@@ -75,6 +75,12 @@
                 <dd id="m-model">—</dd>
             </dl>
             <p class="caveat-body" id="m-note"></p>
+            <p class="caveat-body" id="m-kwarn" hidden>
+                <b>You have changed the number of groups.</b> Which cases sit
+                together changes with it — two cases grouped at one setting can be
+                split at another. Compare settings before drawing a conclusion
+                from any single one.
+            </p>
         </div>
 
         <div class="pop" id="settings-pop" hidden>
@@ -516,8 +522,16 @@
         document.getElementById('m-built').textContent = data.meta.generated || '—';
         document.getElementById('m-src').textContent = data.meta.source_file || '—';
         document.getElementById('m-cases').textContent = data.meta.n_cases;
+        // Group membership genuinely moves when the count changes — on the demo
+        // register the three anticoagulation cases share a group at 5 and split
+        // at 6. Someone who has regrouped should be told the number is theirs.
+        const DEFAULT_K = 5;
         document.getElementById('m-groups').textContent =
-            data.meta.n_clusters + ' (found automatically, not pre-set)';
+            data.meta.n_clusters === DEFAULT_K
+                ? data.meta.n_clusters + ' (found automatically, not pre-set)'
+                : data.meta.n_clusters + ' — you changed this from ' + DEFAULT_K;
+        const kWarn = document.getElementById('m-kwarn');
+        kWarn.hidden = data.meta.n_clusters === DEFAULT_K;
         document.getElementById('m-model').textContent = 'On this computer — nothing sent out';
 
         // "Is 14% ok?" is the first question anyone senior asks, so the number
@@ -614,6 +628,29 @@
             // the same fact drawn twice, for two more rows of height.
             const share = Math.round((c.size / n) * 100);
             const coh = c.cohesion == null ? null : c.cohesion;
+            // Three words cannot describe a group of eleven narratives, and on a
+            // mixed group they actively mislead. The exemplar — the case closest
+            // to the centre of the group, chosen in the full embedding space
+            // rather than by keyword — is what actually says what this is, so it
+            // rides along as the row's explainer.
+            const bits = [];
+            if (c.exemplar && c.exemplar.text) {
+                bits.push('Most typical case in this group: “' +
+                    c.exemplar.text.replace(/\s+/g, ' ').trim() + '…”');
+            }
+            // A name built from words is a hint about vocabulary, not a
+            // definition of the group. On this register the best available term
+            // appears in under a third of its group, so the tooltip states the
+            // reach of the name rather than letting it imply completeness.
+            if (c.label_coverage) {
+                bits.push('The words in this name appear in about ' +
+                    Math.round(c.label_coverage * 100) + '% of its cases — ' +
+                    'a hint, not a definition.');
+            } else {
+                bits.push('No word is common enough across this group to name it, ' +
+                    'so it is numbered rather than given a label it has not earned.');
+            }
+            b.dataset.tip = bits.join(' ');
             b.innerHTML =
                 '<i></i>' +
                 '<span class="lab">' +
@@ -643,6 +680,8 @@
             deptBox.appendChild(b);
         });
 
+        // The rows are built above, so their explainers are wired once the
+        // balloon exists.
         queueMicrotask(() => wireExplainers(legendBox));
 
         document.getElementById('gal-all').addEventListener('click', () => {
@@ -1108,24 +1147,47 @@
            so a filtered view can go straight into a governance pack. */
 
         document.getElementById('export').addEventListener('click', () => {
-            const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+            // Text is quoted, numbers are not. Quoting a numeric column makes some
+            // importers type the whole column as text, and then Severity_Score will
+            // not sort or sum in the spreadsheet it was exported for.
+            const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
             const rows = [[
                 'Case_ID', 'Date', 'Department', 'Severity_Score',
-                'Cluster_ID', 'Cluster_Label', 'Case_Summary'
+                'Cluster_ID', 'Cluster_Label', 'Cluster_Cohesion', 'Case_Summary'
             ].join(',')];
+
+            let shown = 0;
             for (let i = 0; i < n; i++) {
                 if (!visible[i]) continue;
+                shown++;
                 const p = points[i];
-                const c = clusters.find(c => c.id === p.cluster) || { label: '' };
-                rows.push([p.id, p.date, p.department, p.severity, p.cluster, c.label, p.summary]
-                    .map(esc).join(','));
+                const c = clusters.find(c => c.id === p.cluster)
+                    || { label: '', cohesion: null };
+                rows.push([
+                    q(p.id), q(p.date), q(p.department), p.severity,
+                    p.cluster, q(c.label),
+                    c.cohesion == null ? '' : c.cohesion.toFixed(3),
+                    q(p.summary)
+                ].join(','));
             }
+
+            // Provenance in the filename. A CSV of 11 rows landing in someone's
+            // inbox otherwise gives no clue that it is a filtered slice of 100,
+            // which group it is, or how many groups the register was cut into —
+            // and a governance pack built on that misleads by omission.
+            const stamp = new Date().toISOString().slice(0, 10);
+            const scope = isolated === null
+                ? 'all-groups'
+                : 'group-' + isolated + '-of-' + clusters.length;
+            const name = 'mm_galaxy_' + stamp + '_' + scope +
+                '_' + shown + 'of' + n + '.csv';
+
             // BOM so Excel opens the UTF-8 correctly on Windows.
-            const blob = new Blob(['﻿' + rows.join('\r\n')],
+            const blob = new Blob(['\uFEFF' + rows.join('\r\n')],
                 { type: 'text/csv;charset=utf-8;' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = 'mm_galaxy_export.csv';
+            a.download = name;
             a.click();
             URL.revokeObjectURL(a.href);
         });

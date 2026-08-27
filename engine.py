@@ -358,12 +358,61 @@ def cluster(matrix: np.ndarray, k: int, seed: int = 42) -> tuple[np.ndarray, flo
     return labels, score
 
 
-def name_clusters(texts: list[str], labels: np.ndarray, k: int) -> list[dict]:
-    """Derive a human-readable label per cluster from its distinctive vocabulary.
+# A term has to appear in at least this share of a cluster's cases before it is
+# allowed into that cluster's name. Without it, TF-IDF happily names an 11-case
+# cluster "Theatre / Waited / Delay" off words that appear in 3 cases each — a
+# label that misdescribes two thirds of what it points at.
+LABEL_COVERAGE_MIN = 0.20
 
-    A TF-IDF matrix is built over the whole corpus, then averaged within each cluster.
-    The top-weighted terms of that mean vector are the terms the cluster uses *more*
-    than the rest of the corpus does — a cheap, dependency-free stand-in for c-TF-IDF.
+# Built once, and kept out of the f-string/escape minefield that mangled it into
+# a literal backspace on the way in.
+WORD_BOUNDARY = r"\b%s\b"
+LABEL_TERMS = 3
+
+# Clinical abbreviations keep their capitals. Title-casing turns "iv" into "Iv"
+# and "ct" into "Ct", which reads as a typo to the only audience that matters.
+LABEL_ABBREVIATIONS = {
+    "iv", "ct", "pe", "ed", "mri", "gi", "cxr", "inr", "tto", "aki", "nof",
+    "dnacpr", "sbar", "icu", "obs", "vte", "cpr", "gp", "hdu", "ecg", "abg",
+}
+
+
+def _titlecase(term: str) -> str:
+    return " ".join(w.upper() if w in LABEL_ABBREVIATIONS else w.title()
+                    for w in term.split())
+
+
+def name_clusters(
+    texts: list[str],
+    labels: np.ndarray,
+    k: int,
+    matrix: np.ndarray | None = None,
+) -> list[dict]:
+    """Name each cluster from vocabulary that is distinctive AND representative.
+
+    Three things go wrong with naive top-TF-IDF labelling, and all three showed up
+    on the mock corpus:
+
+    1. **Frequency is not distinctiveness.** A term common to the whole register
+       scores well inside every cluster. Scoring is therefore the cluster's mean
+       TF-IDF *minus* the corpus mean, which is the c-TF-IDF idea: what does this
+       group say more than everyone else?
+
+    2. **Distinctiveness is not coverage.** A term can be unique to a cluster and
+       still appear in three of its eleven cases. Terms must now clear
+       LABEL_COVERAGE_MIN of the cluster's cases, measured directly against the
+       text, or they do not get to name anything.
+
+    3. **A three-word name is a lexical artefact in a semantic tool.** "Theatre"
+       means two different things in "waited 14 hours for theatre" and "theatre
+       lights failed", and a bag of words cannot tell them apart — which is the
+       exact failure this project exists to fix. So every cluster also carries an
+       `exemplar`: the case closest to its centroid in the full embedding space.
+       That is a real case, chosen semantically, and it says far more about what
+       the group is than three words can.
+
+    When too few terms survive, the cluster is honestly named "Mixed group N"
+    rather than given a confident label it has not earned.
     """
     vec = TfidfVectorizer(
         stop_words=_stopwords(),
@@ -375,28 +424,102 @@ def name_clusters(texts: list[str], labels: np.ndarray, k: int) -> list[dict]:
     try:
         tfidf = vec.fit_transform(texts)
         vocab = np.array(vec.get_feature_names_out())
+        corpus_mean = np.asarray(tfidf.mean(axis=0)).ravel()
     except ValueError:  # corpus too small / too uniform
-        tfidf, vocab = None, np.array([])
+        tfidf, vocab, corpus_mean = None, np.array([]), np.array([])
+
+    lowered = [t.lower() for t in texts]
+
+    # Score every (cluster, term) pair once, so terms can be handed out globally
+    # rather than each cluster independently grabbing the same popular word.
+    candidates: dict[int, list[tuple[float, str]]] = {c: [] for c in range(k)}
+    for cid in range(k):
+        mask = labels == cid
+        if tfidf is None or not mask.any():
+            continue
+        members = [i for i, m in enumerate(mask) if m]
+        distinct = np.asarray(tfidf[mask].mean(axis=0)).ravel() - corpus_mean
+
+        for idx in distinct.argsort()[::-1][:40]:
+            term = str(vocab[idx])
+            score = float(distinct[idx])
+            if score <= 0:
+                continue
+            # "1400", "14" and "0900" are timestamps out of the narrative, not
+            # names for a failure mode.
+            if any(ch.isdigit() for ch in term):
+                continue
+            # Word boundaries, not substrings: "ct" is inside "contact" and
+            # "reflect", which quietly inflated coverage for exactly the short
+            # clinical abbreviations most likely to end up in a label.
+            pattern = re.compile(WORD_BOUNDARY % re.escape(term))
+            coverage = sum(bool(pattern.search(lowered[i])) for i in members)
+            coverage /= len(members)
+            if coverage < LABEL_COVERAGE_MIN:
+                continue
+            # A bigram is a more specific claim than a single word, so it wins ties.
+            candidates[cid].append(
+                (score * (1.25 if " " in term else 1.0), term, coverage))
+        candidates[cid].sort(reverse=True)
+
+    # Hand terms out greedily by score: a term names the cluster that uses it most
+    # distinctively, and no other.
+    taken: set[str] = set()
+    chosen: dict[int, list[str]] = {c: [] for c in range(k)}
+    pool = sorted(
+        ((score, cid, term, cov)
+         for cid, lst in candidates.items() for score, term, cov in lst),
+        reverse=True,
+    )
+    coverage_of: dict[str, float] = {}
+    for _, cid, term, cov in pool:
+        if term in taken or len(chosen[cid]) >= 8:
+            continue
+        # Skip a term already implied by one that was taken ("theatre" after
+        # "theatre list"), which otherwise pads the name with a repeat.
+        if any(term in t or t in term for t in chosen[cid]):
+            continue
+        chosen[cid].append(term)
+        coverage_of[term] = cov
+        taken.add(term)
 
     clusters = []
     for cid in range(k):
         mask = labels == cid
-        terms: list[str] = []
-        if tfidf is not None and mask.any():
-            mean_vec = np.asarray(tfidf[mask].mean(axis=0)).ravel()
-            top_idx = mean_vec.argsort()[::-1][:8]
-            terms = [vocab[i] for i in top_idx if mean_vec[i] > 0]
+        terms = chosen[cid]
+        named = terms[:LABEL_TERMS]
+        headline = (" / ".join(_titlecase(t) for t in named)
+                    if len(named) >= 2 else f"Group {cid + 1}")
 
-        headline = " / ".join(t.title() for t in terms[:3]) if terms else f"Cluster {cid}"
-        clusters.append(
-            {
-                "id": cid,
-                "label": headline,
-                "color": CLUSTER_PALETTE[cid % len(CLUSTER_PALETTE)],
-                "size": int(mask.sum()),
-                "keywords": terms[:8],
+        # How much of the group the name actually describes. On this corpus the
+        # best available term covers under a third of its cluster, so a label is
+        # a hint about vocabulary, not a definition of the group — and the number
+        # is published so the interface can say so rather than implying otherwise.
+        cover = (round(min(coverage_of[t] for t in named), 3)
+                 if len(named) >= 2 else 0.0)
+
+        entry = {
+            "id": cid,
+            "label": headline,
+            "label_coverage": cover,
+            "color": CLUSTER_PALETTE[cid % len(CLUSTER_PALETTE)],
+            "size": int(mask.sum()),
+            "keywords": terms[:8],
+        }
+
+        # The exemplar: the case nearest the centroid in the full embedding space.
+        if matrix is not None and mask.any():
+            members = np.flatnonzero(mask)
+            centroid = matrix[members].mean(axis=0)
+            norm = np.linalg.norm(centroid) or 1.0
+            sims = matrix[members] @ (centroid / norm)
+            medoid = int(members[int(np.argmax(sims))])
+            entry["exemplar"] = {
+                "i": medoid,
+                "text": texts[medoid][:150],
             }
-        )
+
+        clusters.append(entry)
     return clusters
 
 
@@ -691,7 +814,7 @@ def run(
 
     matrix = embed(texts)
     labels, silhouette = cluster(matrix, k=k, seed=seed)
-    clusters = name_clusters(texts, labels, k)
+    clusters = name_clusters(texts, labels, k, matrix)
     for c, m in zip(clusters, cluster_metrics(matrix, labels, k)):
         c.update(m)
 

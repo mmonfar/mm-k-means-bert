@@ -242,6 +242,46 @@ it survives deuteranopia and monochrome print.
 
 ---
 
+## 4.6.1 Naming a group honestly
+
+Naming clusters from top-TF-IDF terms is the obvious approach and it was wrong here in a
+way worth recording, because the failure is instructive: **it is keyword counting, inside
+a tool built to show that keyword counting misleads.**
+
+Measured on the shipped corpus at k=5, the most distinctive term in each cluster appears
+in this share of that cluster's cases (word-boundary matched):
+
+| Cluster | Best term | Coverage |
+|---|---|---|
+| 0 | transfer | 12% |
+| 1 | ct | 29% |
+| 2 | prescribed | 16% |
+| 3 | waited | 23% |
+| 4 | op | 21% |
+
+A three-word name built from those describes, at best, a quarter of what it points at. An
+earlier build named an 11-case cluster "Theatre / Waited / Delay" from terms appearing in
+3 cases each — and two of those cases used *theatre* to mean an operating room rather than
+a queue for one, which is the exact lexical collision the product exists to defeat.
+
+The rules that follow from that:
+
+1. A term must clear `LABEL_COVERAGE_MIN` (0.20) of its cluster, matched on **word
+   boundaries** — substring matching put `ct` inside *contact* and *reflect* and silently
+   inflated coverage for precisely the short abbreviations most likely to be chosen.
+2. Terms containing digits are rejected; `1400` and `14` are timestamps, not failure modes.
+3. Scoring is cluster-mean TF-IDF **minus** corpus mean, and each term is assigned to only
+   one cluster, so a term common to the whole register cannot name several groups at once.
+4. Fewer than two surviving terms means the group is numbered — `Group 3` — rather than
+   given a label it has not earned.
+5. Every cluster carries an `exemplar`: the case nearest its centroid **in the full
+   embedding space**. That is a real case chosen semantically, and it identifies a mixed
+   group far better than any three words can. It is what the interface shows on hover.
+6. `label_coverage` is published in the payload, and the interface states it, so a name
+   cannot imply more completeness than it has.
+
+---
+
 ## 4.7 Ingest contract
 
 Only `Case_Summary` is genuinely required; every other column degrades to a documented

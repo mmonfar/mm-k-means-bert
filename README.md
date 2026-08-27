@@ -22,12 +22,12 @@ Everything runs on a laptop. No API keys. No cloud inference. No PHI leaves the 
 | Ingest | `pandas` + `openpyxl` | reads the spreadsheet the hospital already has |
 | Semantics | `sentence-transformers` `all-MiniLM-L6-v2` | 384-d, ~90 MB, CPU-fast, permissive licence |
 | Clustering | PCA(10) + re-normalise, then `sklearn.cluster.KMeans` (k=5) | transparent, deterministic, explainable in a meeting; the PCA step roughly doubles agreement with ground truth vs. clustering the raw 384-d vectors |
-| Labelling | `sklearn` TF-IDF top-terms per cluster | names each galaxy from its own distinctive vocabulary |
+| Labelling | coverage-gated TF-IDF, plus a semantic exemplar | a name must describe ≥20% of its group or the group is numbered instead; every group also carries its most typical case |
 | Projection | `umap-learn` if present, else `sklearn` PCA | 384-d → x, y, z |
 | Render | Three.js r160 via CDN ESM | zero build step, single static folder |
 | Workbench | `serve.py`, stdlib `http.server` only | drop a register on the page; nothing to install, ~200 lines an IG team can read |
 | Brand | `app/assets/brand.css`, typefaces inlined as base64 | no font request; renders identically on an air-gapped machine |
-| Promo | `matplotlib` + `imageio` | headless-renderable GIF/MP4 for social |
+| Promo | `video.html` + Playwright capture | the film is HTML on the brand layer; the renderer just seeks and screenshots it |
 | Tests | `pytest` | geometry and payload contracts |
 
 ---
@@ -210,14 +210,21 @@ layout choice can distort it:
 | Case card → *Closest cases* | the 3 most semantically similar cases, as cosine similarity |
 | A neighbour flagged **different galaxy** | the clustering and the measurement disagree here — usually the most instructive case in the room |
 | Legend → *cohesion* | mean within-galaxy similarity. High = one failure repeating. Low = a grab-bag |
+| Legend → hover a galaxy | its most typical case, and how much of the group its name actually covers |
 | Legend → *nearest galaxy N similar* | how close this galaxy really is to its neighbour, regardless of the on-screen gap |
 | Stats → *variance kept* | how much of the semantics survived the projection |
 
 Click any nearest-case row and the camera flies to it, which makes the headline claim
-checkable by hand. In the shipped mock corpus, *"blood thinner mistake"*, *"heparin
-administration error"* and *"warfarin dose miscalculated"* share **no content words** and
-land in the **same galaxy** — that grouping is what the engine is claiming, and
-`tests/test_pipeline.py` asserts it.
+checkable by hand. In the shipped mock corpus at the **default five groups**, *"blood
+thinner mistake"*, *"heparin administration error"* and *"warfarin dose miscalculated"*
+share **no content words** and land in the **same galaxy**. That grouping is what the
+engine claims, and `tests/test_pipeline.py` asserts it.
+
+**The claim is scoped to that default, and measurably so.** Regroup the same register
+into six and *"blood thinner mistake"* splits away from the other two; at seven it splits
+again. Agreement with the withheld ground-truth labels falls with it — ARI +0.43 at five,
++0.36 at six, +0.27 at seven — so five is not an arbitrary default. The app says so when
+you change the number, and a test fails if the scoping language here ever goes stale.
 
 Be careful not to over-read the *ranking*, though. Within a galaxy, "closest case" is
 driven by the whole narrative, not only the failure type, so those three are not

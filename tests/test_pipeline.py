@@ -15,6 +15,7 @@ Skip the slow one:   pytest -q -m "not slow"
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -318,6 +319,76 @@ def test_cluster_metrics_report_cohesion_and_adjacency():
     assert -1.0001 <= metrics[0]["nearest_similarity"] <= 1.0001
 
 
+def test_label_terms_must_actually_describe_their_group():
+    """A name has to cover a real share of the cases it points at.
+
+    This is the bug that prompted the rule: an 11-case group was being named
+    "Theatre / Waited / Delay" off terms that appeared in 3 cases each, and two
+    of those cases used "theatre" to mean an operating room rather than a queue
+    for one. A name that misdescribes two thirds of its group is worse than no
+    name, so a term now has to clear LABEL_COVERAGE_MIN of the group — measured
+    on word boundaries, because "ct" is inside "contact" and "reflect".
+    """
+    texts = [
+        "Delay to theatre for a perforated viscus, waited 14 hours for a slot.",
+        "Fractured neck of femur waited 62 hours against a 36 hour standard.",
+        "Upper GI bleed waited overnight for endoscopy, on-call from home.",
+        "Retained swab found on the post-op chest film after laparotomy.",
+        "Theatre lights failed mid-case, generator switchover took 40 seconds.",
+        "Prosthetic joint infection at five weeks, antibiotic given after tourniquet.",
+    ]
+    labels = np.zeros(len(texts), dtype=int)
+    clusters = engine.name_clusters(texts, labels, 1)
+    label = clusters[0]["label"].lower()
+
+    for term in clusters[0]["keywords"]:
+        pattern = re.compile(engine.WORD_BOUNDARY % re.escape(term))
+        hits = sum(bool(pattern.search(t.lower())) for t in texts)
+        assert hits / len(texts) >= engine.LABEL_COVERAGE_MIN, (
+            f"{term!r} names the group but appears in only {hits}/{len(texts)} cases"
+        )
+
+    # "40", "14" and "62" are timestamps out of the narrative, not failure modes.
+    # Checked on the keywords, not the label: the honest fallback is "Group 1",
+    # whose digit is a group number rather than a stray token.
+    assert not any(ch.isdigit() for t in clusters[0]["keywords"] for ch in t)
+    assert label
+
+
+def test_unnamed_groups_are_numbered_not_invented():
+    """With no shared vocabulary, the honest label is a number."""
+    texts = [
+        "Wrong dose of insulin drawn up overnight on a busy medical ward.",
+        "Scaffolding collapsed in the car park during the storm on Tuesday.",
+        "Interpreter unavailable so consent was taken through a family member.",
+        "Freezer alarm unheard, three units of platelets discarded next morning.",
+        "Porter took the patient to the wrong department for their appointment.",
+        "Cleaning trolley blocked the fire door on the third floor landing.",
+    ]
+    labels = np.zeros(len(texts), dtype=int)
+    label = engine.name_clusters(texts, labels, 1)[0]["label"]
+    assert label == "Group 1"
+
+
+def test_every_group_carries_a_semantic_exemplar():
+    """The exemplar is the case nearest the centroid, chosen in embedding space
+    rather than by keyword — it is what actually identifies a mixed group."""
+    rng = np.random.default_rng(5)
+    m = rng.normal(0, 1, (12, 16))
+    m /= np.linalg.norm(m, axis=1, keepdims=True)
+    texts = [f"case number {i} with some narrative text attached" for i in range(12)]
+    labels = np.array([0] * 6 + [1] * 6)
+
+    clusters = engine.name_clusters(texts, labels, 2, m)
+    for c in clusters:
+        assert "exemplar" in c
+        assert c["exemplar"]["text"]
+
+    # It must be a genuine member of its own group, not just any case.
+    assert clusters[0]["exemplar"]["i"] < 6
+    assert clusters[1]["exemplar"]["i"] >= 6
+
+
 def test_cluster_colors_come_from_the_brand_palette():
     df = data_generator.build_frame(rows=100, seed=42)
     labels = np.array([i % 5 for i in range(len(df))])
@@ -384,6 +455,39 @@ def test_embeddings_bind_lexically_divergent_synonyms():
     v = engine.embed(texts)
     sim = v @ v.T  # vectors are L2-normalised, so this is cosine similarity
     assert sim[0, 1] > sim[0, 2]
+
+
+@pytest.mark.slow
+def test_the_headline_claim_is_scoped_to_the_default_grouping():
+    """The claim holds at k=5 and does NOT hold at k=6, so it is scoped, not absolute.
+
+    Measured on the shipped corpus: at k=5 the three anticoagulation phrasings share
+    a group (ARI against ground truth +0.43); at k=6 "blood thinner mistake" splits
+    away from the other two (+0.36); at k=7 it splits again (+0.27). The app lets a
+    user change the group count, so a reader who regroups can find the headline claim
+    false — which is why the interface says so when the count is changed, and why the
+    README and the post both say "the default grouping" rather than stating it flat.
+
+    This test exists to stop the claim being quietly widened later.
+    """
+    pytest.importorskip("sentence_transformers")
+
+    df = data_generator.build_frame(rows=100, seed=42)
+    texts = df["Case_Summary"].tolist()
+    matrix = engine.embed(texts)
+    phrases = ["blood thinner mistake", "heparin administration error",
+               "warfarin dose miscalculated"]
+
+    def groups_at(k):
+        labels, _ = engine.cluster(matrix, k=k)
+        return {p: int(labels[next(i for i, t in enumerate(texts)
+                                   if p in t.lower())]) for p in phrases}
+
+    assert len(set(groups_at(5).values())) == 1, "the default grouping must hold"
+    assert len(set(groups_at(6).values())) > 1, (
+        "k=6 now keeps the trio together — the scoping language in the README and "
+        "the post is out of date and should be revisited"
+    )
 
 
 @pytest.mark.slow
