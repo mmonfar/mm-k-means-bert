@@ -8,10 +8,10 @@ sentence-transformers>=2.2
 openpyxl>=3.1
 pytest>=7.4
 
-# Marketing / promo asset generation (Phase 4)
-matplotlib>=3.7
-imageio>=2.31
+# --smart-labels needs no extra install: `transformers` and `torch` already
+# arrive with sentence-transformers. It downloads ~1GB of model weights on
+# first use and runs offline thereafter.
 
-# Optional: better manifold separation than PCA.
-# The engine auto-detects it and silently falls back to PCA if absent.
+# Optional: better manifold separation than PCA. The engine auto-detects it and
+# falls back to PCA if absent.
 # umap-learn>=0.5

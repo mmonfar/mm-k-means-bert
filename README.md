@@ -27,8 +27,9 @@ Everything runs on a laptop. No API keys. No cloud inference. No PHI leaves the 
 | Render | Three.js r160 via CDN ESM | zero build step, single static folder |
 | Workbench | `serve.py`, stdlib `http.server` only | drop a register on the page; nothing to install, ~200 lines an IG team can read |
 | Brand | `app/assets/brand.css`, typefaces inlined as base64 | no font request; renders identically on an air-gapped machine |
-| Promo | `video.html` + Playwright capture | the film is HTML on the brand layer; the renderer just seeks and screenshots it |
-| Tests | `pytest` | geometry and payload contracts |
+| Naming | coverage-gated terms → optional local model → a person | see [Naming the groups](#naming-the-groups) |
+| Feedback | `feedback.py`, stdlib `sqlite3` | keeps human names across runs, stores no case text |
+| Tests | `pytest` | 47 tests: ingest, geometry, payload, labelling and feedback contracts |
 
 ---
 
@@ -79,11 +80,10 @@ pipeline the CLI runs.
 | Command | What it does |
 |---|---|
 | `python data_generator.py` | writes `mock_mm_minutes.xlsx` — 100 synthetic M&M cases across 5 failure modes, with semantic traps baked in |
-| `python engine.py` | the pipeline: ingest → embed → cluster → project → `app/data.json` (+ injection into `app/index.html`) |
+| `python engine.py` | the pipeline: ingest → embed → cluster → project → `app/data.json` and `app/standalone.html` |
 | `python engine.py --input export.csv` | run it against your own de-identified extract (.xlsx/.xls/.xlsm/.csv/.tsv) |
 | `python engine.py --input x.csv --text-col "What happened"` | name a column explicitly when the synonym table misses it |
 | `python engine.py --clusters 7 --projection pca` | change k, or force a projection backend |
-| `python marketing/generate_promo_viz.py --mp4` | render `marketing/visual_preview.gif` (and `.mp4`) for LinkedIn |
 | `pytest -q` | full contract suite |
 | `pytest -q -m "not slow"` | skip the test that needs the MiniLM weights |
 | `python serve.py` | the workbench: serve the canvas and accept register uploads from the page |
@@ -250,7 +250,7 @@ mm-k-means-bert/
 ├── data_generator.py         synthetic 100-case M&M corpus
 ├── engine.py                 the pipeline compiler
 ├── mock_mm_minutes.xlsx      generated (git-ignored)
-├── serve.py                  local workbench (upload + rebuild from the page)
+├── serve.py                  local workbench (upload, regroup, rename)
 ├── app/                      the static deliverable — deploy this folder alone
 │   ├── index.html            the app; tracked, ships with an empty payload
 │   ├── standalone.html       generated, payload inlined (git-ignored)
@@ -258,10 +258,9 @@ mm-k-means-bert/
 │   └── assets/
 │       ├── brand.css         canonical mmonfar. brand layer, fonts inlined
 │       └── styles.css        app layer, composes brand tokens only
-├── marketing/                git-ignored in full — post copy and promo renders
-│   ├── linkedin_post.txt
-│   ├── generate_promo_viz.py
-│   └── visual_preview.gif
+├── labeller.py               optional local-model naming (--smart-labels)
+├── feedback.py               human judgements: SQLite, no case text
+├── feedback.db               generated (git-ignored)
 └── tests/test_pipeline.py
 ```
 

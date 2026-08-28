@@ -53,8 +53,11 @@ system is breaking.
 │                        n_init=25,            │
 │                        random_state=42)      │
 │ output: labels in {0..4}^n                   │
-│ + auto-labelled cluster names via TF-IDF     │
-│   top-term extraction per cluster            │
+│ + names, in order of authority:              │
+│     a person (feedback.db)  >                │
+│     a local model (opt-in)  >                │
+│     TF-IDF terms clearing 20% coverage  >    │
+│     a number                                 │
 └──────────┬───────────────────────────────────┘
            │  labels, centroids
            ▼
@@ -113,10 +116,10 @@ mm-k-means-bert/
 │   └── assets/
 │       ├── brand.css           # canonical mmonfar. brand layer, fonts inlined
 │       └── styles.css          # app layer, composes brand tokens only
-├── marketing/                  # git-ignored in full
-│   ├── linkedin_post.txt
-│   ├── generate_promo_viz.py
-│   └── visual_preview.gif
+├── labeller.py                 # optional local-model group naming
+├── feedback.py                 # human judgements (SQLite, no case text)
+├── feedback.db                 # generated, git-ignored
+├── marketing/                  # git-ignored in full; not part of the repo
 └── tests/
     └── test_pipeline.py        # pytest contract tests
 ```
