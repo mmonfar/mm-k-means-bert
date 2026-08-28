@@ -384,7 +384,15 @@ prints a warning and should not be used with real data.
 
 ## Licence & provenance
 
-Synthetic data only — every case in `mock_mm_minutes.xlsx` is invented. `all-MiniLM-L6-v2`
-is Apache-2.0. Three.js is MIT.
+**Apache-2.0** — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Permissive, with an
+explicit patent grant, which is the question an NHS legal review tends to ask
+first. It also matches the licences of the models this ships against.
+
+Everything it depends on is permissively licensed: `all-MiniLM-L6-v2` and the
+optional Qwen2.5 naming model are Apache-2.0, Three.js is MIT, scikit-learn and
+pandas are BSD, and both typefaces are SIL OFL 1.1.
+
+**Synthetic data only.** Every case in `mock_mm_minutes.xlsx` is invented — no
+real patient, clinician, case or organisation appears anywhere in this repo.
 
 **mmonfar.** — Clinical Systems Architect

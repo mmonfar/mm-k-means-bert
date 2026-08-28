@@ -1,0 +1,18 @@
+mmonfar. // Semantic M&M Failure Navigation Engine
+Copyright 2026 mmonfar.
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+This product bundles or depends on the following, under their own licences:
+
+  Three.js                        MIT          https://threejs.org
+  sentence-transformers           Apache-2.0
+  all-MiniLM-L6-v2 (weights)      Apache-2.0   downloaded at first run
+  Qwen2.5-Instruct (weights)      Apache-2.0   optional, only with --smart-labels
+  scikit-learn                    BSD-3-Clause
+  pandas, numpy                   BSD-3-Clause
+  Plus Jakarta Sans               SIL OFL 1.1  inlined in app/assets/brand.css
+  JetBrains Mono                  SIL OFL 1.1  inlined in app/assets/brand.css
+
+The demo dataset in data_generator.py is entirely synthetic. It contains no real
+patient, clinician, case or organisation.
