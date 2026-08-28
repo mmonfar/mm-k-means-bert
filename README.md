@@ -283,10 +283,17 @@ named it, and the interface says so on hover.
 | Source | How it works | How good it is |
 |---|---|---|
 | **Keywords** (default) | distinctive terms that clear 20% coverage of the group | works for about two groups in five; the rest are honestly numbered |
-| **A local model** (`--smart-labels`) | a ~1 GB instruct model reads the six cases nearest the group's centre and names them | roughly one group in three is right — treat every name as a draft |
-| **A person** | rename a group in the app; the name is stored and reapplied on later runs | authoritative, and the only source that is reliably correct |
+| **The house taxonomy** | past human decisions classify today's cases | **78% correct** on unseen cases, and it declines when unsure |
+| **A local model** (`--smart-labels`) | a ~1 GB instruct model reads the group's central cases | roughly one group in three — see the caveat below |
+| **A person** | rename a group in the app | authoritative, and it teaches the taxonomy |
 
-### `--smart-labels`, and why it is off by default
+### The short version
+
+Name a group once. From then on the tool classifies new cases into that name by
+itself, gets better every time anyone names anything, and needs no language model
+to do it. That loop is the feature; everything else is scaffolding for it.
+
+### `--smart-labels`, and why you probably do not need it
 
 ```bash
 python engine.py --smart-labels
@@ -308,6 +315,56 @@ So a model may only name a group whose measured cohesion clears 0.25. Below that
 the group keeps its number. Names are also validated (rejecting sentences,
 refusals and case numbers) and de-duplicated, and each is marked as
 model-written in the payload and the interface.
+
+**Recommendation: leave it off.** It costs a gigabyte and is right about a third
+of the time. Naming three groups by hand costs a few minutes, is right every
+time, and teaches the taxonomy — which then does the work for free, at 78%, on
+every register after that. The flag stays in the repo because it was measured
+rather than assumed, and the measurement is the useful part.
+
+### The refinement loop — how it gets better with use
+
+This is the part that improves. It is also, deliberately, the cheapest part:
+**no language model, no training run, no download.** The embeddings are already
+computed to draw the map, and a label is simply the mean of the embeddings of the
+cases a person filed under it. Classifying next quarter's register is then a
+cosine comparison — milliseconds, and completely inspectable.
+
+```
+   a person names a group
+        ↓
+   the core cases of that group are learned into a running centroid
+        ↓
+   next register: every case is compared against every learned centroid
+        ↓
+   confident matches are labelled;  uncertain ones are left blank for a human
+        ↓
+   the human names those too  →  the centroids sharpen  →  repeat
+```
+
+**Measured on the demo register.** Split 100 cases into a first quarter of 70 and
+a second of 30. A person labels the core of each group in quarter one — 47 cases
+in total. Then the 30 cases from quarter two, which the tool has never seen:
+
+| | |
+|---|---|
+| Answered | 23 of 30 |
+| Declined as too uncertain | 7 |
+| **Correct, of those answered** | **18 of 23 — 78%** |
+
+For comparison, unsupervised clustering on the same data agrees with ground truth
+at ARI 0.43, and the local language model names about one group in three
+correctly. The store beats both, and it is the lightest of the three.
+
+The declining matters as much as the accuracy. A label needs at least five
+examples before it may classify anything; a prediction needs to beat the
+runner-up by a margin, and to clear a similarity floor. Below any of those the
+answer is a blank for a human to fill in. A governance pack full of confident
+mislabels is worse than one with gaps.
+
+Once a group's cases mostly agree on a learned label (60%+), the group is named
+after it — `label_source: "taxonomy"` — so the map converges on the hospital's own
+vocabulary rather than TF-IDF's.
 
 ### Human names, and how they survive
 

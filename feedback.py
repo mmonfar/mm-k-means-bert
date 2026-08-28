@@ -75,6 +75,17 @@ CREATE TABLE IF NOT EXISTS group_names (
     created_at  TEXT NOT NULL
 );
 
+-- The learned taxonomy: one running centroid per label, never one per case.
+-- A mean over many cases is what makes the next register classifiable without
+-- keeping the last one. Storing per-case vectors would work too and is not done
+-- on purpose: an average over n cases is far less like any individual case.
+CREATE TABLE IF NOT EXISTS label_centroids (
+    label      TEXT PRIMARY KEY,
+    vector_sum TEXT NOT NULL,          -- json list[float], summed not averaged
+    n          INTEGER NOT NULL,       -- how many cases went into it
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS case_labels (
     case_key   TEXT NOT NULL,          -- sha256 of the normalised narrative
     label      TEXT NOT NULL,          -- the house taxonomy name
@@ -281,15 +292,154 @@ def training_set(conn, min_per_label: int = 5) -> dict[str, list[str]]:
     return {k: v for k, v in grouped.items() if len(v) >= min_per_label}
 
 
+# --------------------------------------------------------------------------------------
+# The refinement loop
+# --------------------------------------------------------------------------------------
+#
+# This is the part that makes the tool get better with use, and it needs no
+# language model. The embeddings are already computed for the map; a label is
+# just the mean of the embeddings of the cases a human put under it. Classifying
+# next quarter's register is then a cosine comparison — a few milliseconds, no
+# download, no training run, and completely inspectable.
+#
+# It improves monotonically: every case a human files adds to a centroid, so the
+# taxonomy sharpens as the hospital uses it, and it is *their* taxonomy rather
+# than the textbook's.
+
+# A label needs this many examples before it is allowed to classify anything.
+# Below it the centroid is really just one or two cases wearing a category name.
+MIN_EXAMPLES = 5
+
+# A prediction must beat the runner-up by this much. Two labels 0.01 apart is a
+# coin toss, and a coin toss presented as a classification is worse than a blank.
+MIN_MARGIN = 0.02
+
+# And it must be at least this similar at all, or the case is simply new.
+MIN_CONFIDENCE = 0.25
+
+
+def learn(conn, label: str, vectors, author: str | None = None) -> int:
+    """Fold cases into a label's running centroid. Returns the label's new count."""
+    import numpy as np
+
+    vectors = np.asarray(vectors, dtype=float)
+    if vectors.ndim == 1:
+        vectors = vectors[None, :]
+    if not len(vectors):
+        return 0
+
+    label = label.strip()
+    row = conn.execute(
+        "SELECT vector_sum, n FROM label_centroids WHERE label = ?", (label,)
+    ).fetchone()
+
+    total = np.asarray(json.loads(row["vector_sum"]), dtype=float) if row else 0.0
+    count = row["n"] if row else 0
+    total = total + vectors.sum(axis=0)
+    count += len(vectors)
+
+    conn.execute(
+        "INSERT INTO label_centroids (label, vector_sum, n, updated_at) VALUES (?,?,?,?)"
+        " ON CONFLICT(label) DO UPDATE SET"
+        "   vector_sum=excluded.vector_sum, n=excluded.n, updated_at=excluded.updated_at",
+        (label, json.dumps([round(float(v), 6) for v in np.atleast_1d(total)]),
+         count, _now()),
+    )
+    conn.commit()
+    log(conn, "learn", {"label": label, "added": len(vectors), "total": count}, author)
+    return count
+
+
+def taxonomy(conn) -> dict[str, int]:
+    """Every learned label and how many cases stand behind it."""
+    return {r["label"]: r["n"]
+            for r in conn.execute("SELECT label, n FROM label_centroids").fetchall()}
+
+
+def _usable_centroids(conn):
+    import numpy as np
+
+    rows = conn.execute(
+        "SELECT label, vector_sum, n FROM label_centroids WHERE n >= ?",
+        (MIN_EXAMPLES,),
+    ).fetchall()
+    labels, vectors = [], []
+    for r in rows:
+        vec = np.asarray(json.loads(r["vector_sum"]), dtype=float) / r["n"]
+        norm = np.linalg.norm(vec)
+        if norm:
+            labels.append(r["label"])
+            vectors.append(vec / norm)
+    return labels, (np.stack(vectors) if vectors else None)
+
+
+def classify(conn, vectors) -> list[dict]:
+    """Assign each case to the house taxonomy, or to nothing.
+
+    Returns one record per case: {"label", "confidence", "margin"}. `label` is
+    None whenever the tool is not entitled to an opinion — too few examples, too
+    little similarity, or two labels too close to separate. Refusing to answer is
+    a feature: a governance pack full of confident mislabels is worse than one
+    with blanks a human fills in.
+    """
+    import numpy as np
+
+    labels, bank = _usable_centroids(conn)
+    vectors = np.asarray(vectors, dtype=float)
+    if bank is None or not len(vectors):
+        return [{"label": None, "confidence": None, "margin": None}
+                for _ in range(len(vectors))]
+
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    sims = (vectors / norms) @ bank.T
+
+    out = []
+    for row in sims:
+        order = np.argsort(-row)
+        best = float(row[order[0]])
+        runner = float(row[order[1]]) if len(order) > 1 else -1.0
+        margin = best - runner
+        if best < MIN_CONFIDENCE or margin < MIN_MARGIN:
+            out.append({"label": None, "confidence": round(best, 4),
+                        "margin": round(margin, 4)})
+        else:
+            out.append({"label": labels[order[0]], "confidence": round(best, 4),
+                        "margin": round(margin, 4)})
+    return out
+
+
+def evaluate(conn, vectors, truth: list[str]) -> dict:
+    """How well the learned taxonomy reproduces known human labels.
+
+    Honest about its own limits: the same cases trained these centroids, so this
+    is a floor on error, not an estimate of future accuracy. It answers "has this
+    taxonomy learned anything coherent yet", which is the question that decides
+    whether to trust it at all.
+    """
+    predictions = classify(conn, vectors)
+    answered = [(p["label"], t) for p, t in zip(predictions, truth) if p["label"]]
+    if not answered:
+        return {"answered": 0, "of": len(truth), "agreement": None}
+    hits = sum(1 for pred, actual in answered if pred == actual)
+    return {
+        "answered": len(answered),
+        "of": len(truth),
+        "agreement": round(hits / len(answered), 3),
+    }
+
+
 def summary(conn) -> dict:
     """One-line state of the store, for the interface and the CLI."""
     def count(table: str) -> int:
         return conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
 
+    learned = taxonomy(conn)
     return {
         "named_groups": count("group_names"),
         "labelled_cases": count("case_labels"),
         "links": count("links"),
         "events": count("events"),
-        "ready_labels": sorted(training_set(conn)),
+        "taxonomy": learned,
+        "ready_labels": sorted(k for k, n in learned.items() if n >= MIN_EXAMPLES),
     }

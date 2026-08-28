@@ -326,6 +326,90 @@ def test_links_are_recorded_once_regardless_of_order(store):
     assert rows[0]["kind"] == "different"
 
 
+def test_a_label_cannot_classify_until_it_has_enough_examples(store):
+    """Two cases wearing a category name is not a taxonomy."""
+    feedback, conn = store
+    for _ in range(feedback.MIN_EXAMPLES - 1):
+        feedback.learn(conn, "Medication safety", [[1.0, 0.0, 0.0]])
+
+    assert feedback.taxonomy(conn)["Medication safety"] == feedback.MIN_EXAMPLES - 1
+    assert feedback.summary(conn)["ready_labels"] == []
+    assert feedback.classify(conn, [[1.0, 0.0, 0.0]])[0]["label"] is None
+
+    feedback.learn(conn, "Medication safety", [[1.0, 0.0, 0.0]])
+    assert feedback.classify(conn, [[1.0, 0.0, 0.0]])[0]["label"] == "Medication safety"
+
+
+def test_a_learned_label_classifies_a_case_it_has_never_seen(store):
+    feedback, conn = store
+    rng = np.random.default_rng(11)
+
+    meds = np.array([1.0, 0.0, 0.0]) + rng.normal(0, 0.05, (8, 3))
+    surg = np.array([0.0, 1.0, 0.0]) + rng.normal(0, 0.05, (8, 3))
+    feedback.learn(conn, "Medication safety", meds)
+    feedback.learn(conn, "Surgical complications", surg)
+
+    unseen = [[0.98, 0.04, 0.0], [0.03, 0.99, 0.0]]
+    got = [p["label"] for p in feedback.classify(conn, unseen)]
+    assert got == ["Medication safety", "Surgical complications"]
+
+
+def test_it_declines_when_two_labels_are_too_close(store):
+    """A coin toss presented as a classification is worse than a blank."""
+    feedback, conn = store
+    feedback.learn(conn, "Label A", [[1.0, 0.0, 0.0]] * 6)
+    feedback.learn(conn, "Label B", [[0.0, 1.0, 0.0]] * 6)
+
+    # Exactly between the two: no honest answer exists.
+    verdict = feedback.classify(conn, [[0.7071, 0.7071, 0.0]])[0]
+    assert verdict["label"] is None
+    assert verdict["margin"] < feedback.MIN_MARGIN
+
+
+def test_it_declines_a_case_unlike_anything_it_has_learned(store):
+    feedback, conn = store
+    feedback.learn(conn, "Medication safety", [[1.0, 0.0, 0.0]] * 6)
+
+    orthogonal = feedback.classify(conn, [[0.0, 0.0, 1.0]])[0]
+    assert orthogonal["label"] is None
+    assert orthogonal["confidence"] < feedback.MIN_CONFIDENCE
+
+
+def test_learning_is_incremental_not_a_retrain(store):
+    """Adding cases updates a running mean — the point of the design is that
+    nothing has to be retrained, ever."""
+    feedback, conn = store
+    feedback.learn(conn, "Medication safety", [[1.0, 0.0, 0.0]] * 3)
+    assert feedback.taxonomy(conn)["Medication safety"] == 3
+
+    feedback.learn(conn, "Medication safety", [[1.0, 0.0, 0.0]] * 4)
+    assert feedback.taxonomy(conn)["Medication safety"] == 7
+
+
+def test_evaluate_reports_agreement_and_how_much_it_answered(store):
+    feedback, conn = store
+    feedback.learn(conn, "A", [[1.0, 0.0, 0.0]] * 6)
+    feedback.learn(conn, "B", [[0.0, 1.0, 0.0]] * 6)
+
+    vectors = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    report = feedback.evaluate(conn, vectors, ["A", "B", "A"])
+
+    assert report["of"] == 3
+    assert report["answered"] == 2          # the orthogonal one is declined
+    assert report["agreement"] == 1.0
+
+
+def test_the_taxonomy_stores_no_per_case_vector(store):
+    """Only running means are kept. A mean over many cases is far less like any
+    individual case than that case's own embedding would be."""
+    feedback, conn = store
+    feedback.learn(conn, "Medication safety", np.eye(3)[[0, 0, 1, 1, 2, 2]])
+
+    rows = conn.execute("SELECT COUNT(*) AS n FROM label_centroids").fetchall()
+    assert rows[0]["n"] == 1, "one row per label, not one per case"
+    assert feedback.taxonomy(conn)["Medication safety"] == 6
+
+
 def test_connect_honours_a_reassigned_db_path(tmp_path, monkeypatch):
     """Regression: DB_PATH was bound as a default argument, so it was fixed at
     import and every read silently went to the wrong file."""
@@ -413,6 +497,9 @@ def test_payload_shape_and_bounds():
         assert set(p) == {
             "id", "x", "y", "z", "tx", "ty", "tz",
             "cluster", "department", "severity", "date", "summary", "nearest",
+            # What the hospital's own taxonomy makes of this case; null until it
+            # has been taught enough to have an opinion.
+            "house", "house_confidence",
         }
         assert 0 <= p["cluster"] < 5
         assert 1 <= p["severity"] <= 5

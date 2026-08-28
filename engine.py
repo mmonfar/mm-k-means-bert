@@ -677,6 +677,59 @@ def _min_centroid_gap(coords: np.ndarray, labels: np.ndarray) -> float:
 # 5. Emit
 # --------------------------------------------------------------------------------------
 
+# A group is named after the house taxonomy only when the taxonomy is this sure
+# of it. Below the threshold the group is genuinely something else, or something
+# new, and inheriting last quarter's name would hide that.
+HOUSE_NAME_AGREEMENT = 0.60
+
+
+def apply_house_taxonomy(clusters, labels, matrix) -> list[dict]:
+    """Classify every case against labels a human taught the store earlier.
+
+    Returns one record per case, in row order, for the payload. Also names a
+    cluster after the dominant house label when enough of its cases agree —
+    which is how the tool converges on the hospital's own vocabulary instead of
+    TF-IDF's, without anything generative involved.
+    """
+    blank = [{"label": None, "confidence": None, "margin": None}] * len(labels)
+    try:
+        import feedback
+    except ImportError:  # pragma: no cover - optional component
+        return blank
+    if not feedback.DB_PATH.exists():
+        return blank
+
+    conn = feedback.connect()
+    try:
+        if not any(n >= feedback.MIN_EXAMPLES for n in feedback.taxonomy(conn).values()):
+            return blank
+        predictions = feedback.classify(conn, matrix)
+    finally:
+        conn.close()
+
+    for c in clusters:
+        members = np.flatnonzero(labels == c["id"])
+        votes: dict[str, int] = {}
+        for i in members:
+            name = predictions[i]["label"]
+            if name:
+                votes[name] = votes.get(name, 0) + 1
+        if not votes or not len(members):
+            continue
+
+        winner, count = max(votes.items(), key=lambda kv: kv[1])
+        share = count / len(members)
+        if share >= HOUSE_NAME_AGREEMENT:
+            c["label"] = winner
+            c["label_source"] = "taxonomy"
+            c["label_agreement"] = round(share, 3)
+
+    named = sum(1 for c in clusters if c.get("label_source") == "taxonomy")
+    if named:
+        print(f"      note        : {named} group(s) named from the house taxonomy")
+    return predictions
+
+
 def apply_human_names(clusters, texts, labels, matrix) -> int:
     """Restore names a human gave these groups on an earlier run.
 
@@ -731,6 +784,7 @@ def build_payload(
     separation: float,
     source: str,
     label_model: str = "",
+    house: list[dict] | None = None,
     variance: float | None = None,
     true_coords: np.ndarray | None = None,
     neighbours: list[list[dict]] | None = None,
@@ -767,6 +821,10 @@ def build_payload(
                 "date": "" if pd.isna(date) else pd.Timestamp(date).strftime("%Y-%m-%d"),
                 "summary": str(row["Case_Summary"]),
                 "nearest": (neighbours[i] if neighbours else []),
+                # What the hospital's own taxonomy makes of this case, or null
+                # where the tool is not entitled to an opinion yet.
+                "house": (house[i]["label"] if house and house[i]["label"] else None),
+                "house_confidence": (house[i]["confidence"] if house else None),
             }
         )
 
@@ -879,9 +937,15 @@ def run(
         for c in clusters:
             c.setdefault("label_source", "terms" if c.get("keywords") else "numbered")
 
-    # A human's name outranks everything above it. Applied last, so it overwrites
-    # both the keyword label and anything a model wrote — the person who chaired
-    # the meeting is a better authority on what the group is than either.
+    # What the hospital has already decided, applied to what it is looking at
+    # now. This is the whole refinement loop: no model, no training run — the
+    # embeddings are already here, and a label is the mean of the cases a person
+    # filed under it. It sharpens every time somebody names something.
+    house = apply_house_taxonomy(clusters, labels, matrix)
+
+    # A human's name for THIS group outranks everything above it. Applied last,
+    # so it overwrites the taxonomy, the keyword label and anything a model
+    # wrote — the person who chaired the meeting is the better authority.
     apply_human_names(clusters, texts, labels, matrix)
 
     raw, projection, variance = project(matrix, mode=projection_mode, seed=seed)
@@ -902,6 +966,7 @@ def run(
         true_coords=true_coords,
         neighbours=nearest_neighbours(matrix),
         label_model=model_used,
+        house=house,
     )
 
     APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -915,13 +980,14 @@ def run(
     print("\n      galaxies discovered:")
     for c in clusters:
         mark = {"model": "~", "terms": " ", "numbered": "?",
-                "human": "*", "human_carried": "*"}.get(
+                "taxonomy": "+", "human": "*", "human_carried": "*"}.get(
             c.get("label_source", " "), " ")
         print(f"        [{c['id']}] {c['size']:>3} cases {mark} {c['label']}")
     if model_used:
         print(f"\n      ~ written by {model_used}   * named by a person")
-    elif any(c.get("label_source", "").startswith("human") for c in clusters):
-        print("\n      * named by a person")
+    elif any(c.get("label_source", "").startswith(("human", "taxonomy"))
+             for c in clusters):
+        print("\n      * named by a person   + learned from earlier decisions")
     print("\n[mmonfar.] done. Open app/index.html in a browser.")
     return payload
 

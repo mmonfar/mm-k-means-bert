@@ -315,7 +315,44 @@ will supply one regardless. Generated names are therefore validated, de-duplicat
 across groups, gated on cohesion, and always shown next to the exemplar so a
 reader can check the claim in one glance.
 
-## 4.6.3 The feedback store
+## 4.6.3 The refinement loop
+
+The tool improves through use, and does so without a language model, a training
+run or a new dependency.
+
+```
+person names a group
+  -> core members (nearest the group centroid) are embedded and folded into a
+     running centroid for that label:  sum += v,  n += len(v)
+  -> next register: cosine(case, centroid/n) against every label with n >= 5
+  -> confident, separated matches are assigned; everything else is left blank
+  -> a person resolves the blanks, which sharpens the centroids
+```
+
+Design constraints, and why each is there:
+
+| Constraint | Value | Reason |
+|---|---|---|
+| `MIN_EXAMPLES` | 5 | below this a centroid is one or two cases wearing a category name |
+| `MIN_MARGIN` | 0.02 | two labels 0.01 apart is a coin toss; a coin toss presented as a classification is worse than a blank |
+| `MIN_CONFIDENCE` | 0.25 | a case unlike anything learned is new, not misfiled |
+| `HOUSE_NAME_AGREEMENT` | 0.60 | a group is named from the taxonomy only when most of it agrees |
+| core-only learning | nearest 70% | a mixed group's stragglers would teach the taxonomy something false, and a taxonomy is far harder to unlearn than to poison |
+
+**Measured.** 100-case corpus, split 70/30. A person labels the core of each
+quarter-one group (47 cases). On the 30 unseen quarter-two cases the store
+answers 23, declines 7, and is correct on 18 of 23 — **78%**. Unsupervised
+clustering on the same data scores ARI 0.43 against ground truth; the optional
+local model names one group in three correctly.
+
+**Only running means are stored, never per-case vectors.** One row per label,
+holding a summed vector and a count. An average over many cases is far less like
+any individual case than that case's own embedding would be, which keeps the
+store proportionate under §4.8. This is a deliberate trade: it costs the ability
+to do leave-one-out evaluation, and it buys a store that does not accumulate a
+per-case vector for every narrative the hospital has ever discussed.
+
+## 4.6.4 The feedback store
 
 `feedback.db` (SQLite, stdlib, git-ignored) records human judgements:
 `group_names`, `case_labels`, `links` (same / different), and an append-only

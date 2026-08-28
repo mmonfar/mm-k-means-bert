@@ -46,6 +46,30 @@ ALLOWED_SUFFIXES = engine.SPREADSHEET_SUFFIXES | engine.DELIMITED_SUFFIXES
 _pipeline_lock = threading.Lock()
 
 
+def _core_members(members, centroid, keep=0.7):
+    """The cases nearest the middle of their group.
+
+    Ranked in projection space, which is cheap and already in the payload. That
+    is only used to CHOOSE which cases to learn from — the learning itself
+    embeds them properly in 384-d. The outliers are exactly the cases a mixed
+    group has wrongly swept up, and they are the ones that would teach a
+    taxonomy something false.
+    """
+    if len(members) <= 3:
+        return list(members)
+    mid = [
+        sum(p["x"] for p in members) / len(members),
+        sum(p["y"] for p in members) / len(members),
+        sum(p["z"] for p in members) / len(members),
+    ]
+    ranked = sorted(
+        members,
+        key=lambda p: (p["x"] - mid[0]) ** 2 + (p["y"] - mid[1]) ** 2
+        + (p["z"] - mid[2]) ** 2,
+    )
+    return ranked[: max(3, int(len(ranked) * keep))]
+
+
 class Handler(SimpleHTTPRequestHandler):
     """Static file server for app/, plus a single ingest endpoint."""
 
@@ -245,6 +269,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         import feedback
 
+        author = self.headers.get("X-Author") or None
         conn = feedback.connect()
         try:
             fp = feedback.save_name(
@@ -252,13 +277,35 @@ class Handler(SimpleHTTPRequestHandler):
                 [feedback.case_key(p["summary"]) for p in members],
                 name,
                 group.get("centroid") or [],
-                author=self.headers.get("X-Author") or None,
+                author=author,
             )
+
+            # Naming a group is also the cheapest bulk labelling there is: the
+            # person has just told us what these cases are. Only the core of the
+            # group is learned, though — the cases nearest its centre. A mixed
+            # group's stragglers would teach the taxonomy the wrong thing, and a
+            # taxonomy is much harder to unlearn than it is to poison.
+            learned = 0
+            centroid = group.get("centroid")
+            if centroid:
+                core = _core_members(members, centroid)
+                for p_ in core:
+                    feedback.label_case(conn, p_["summary"], name, author=author)
+                # Embedded properly, in the same 384-d space the classifier
+                # uses. The projection coordinates in the payload are 3-d and
+                # would have taught the taxonomy in a space it never reads
+                # from — a silent dimension mismatch.
+                learned = feedback.learn(
+                    conn, name,
+                    engine.embed([p_["summary"] for p_ in core]),
+                    author=author,
+                )
             state = feedback.summary(conn)
         finally:
             conn.close()
 
-        print(f"[mmonfar.] group {cluster_id} named {name!r} by hand")
+        print(f"[mmonfar.] group {cluster_id} named {name!r} by hand "
+              f"({learned} cases now under that label)")
 
         if not _pipeline_lock.acquire(blocking=False):
             self._json(409, {"error": "a rebuild is already running"})
