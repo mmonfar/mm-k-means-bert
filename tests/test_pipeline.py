@@ -181,6 +181,165 @@ def test_refuses_a_file_too_small_to_cluster(tmp_path, corpus):
         engine.load_minutes(target)
 
 
+# ---------------------------------------------------------------- generated labels
+
+def test_generated_labels_are_validated_not_trusted():
+    """A small model answers with sentences, refusals and case numbers. None of
+    those may reach a governance meeting wearing the authority of a group name."""
+    import labeller
+
+    for junk in [
+        "",
+        "I cannot determine a shared failure from these reports.",
+        "Sure! Here is a name: Medication errors",
+        "The reports describe a variety of different incidents that share",
+        "Group 4 medication errors",           # a case/group number
+        "Delays",                              # one word is not a noun phrase
+        "Medication administration errors involving multiple wards and staff",
+        "First, the reports are similar. Second, they involve drugs.",
+    ]:
+        assert labeller.clean(junk) is None, f"{junk!r} should have been rejected"
+
+    assert labeller.clean("  medication dosing errors  ") == "Medication dosing errors"
+    assert labeller.clean('"Delays reaching theatre."') == "Delays reaching theatre"
+
+
+def test_representative_cases_come_from_the_centre_not_the_edge():
+    """One outlier must not be allowed to steer a group's name."""
+    import labeller
+
+    # Eleven near-identical vectors and one deliberate outlier.
+    core = np.tile(np.array([1.0, 0.0, 0.0]), (11, 1))
+    core += np.random.default_rng(0).normal(0, 0.01, core.shape)
+    matrix = np.vstack([core, np.array([[0.0, 1.0, 0.0]])])
+    matrix /= np.linalg.norm(matrix, axis=1, keepdims=True)
+    texts = [f"core case {i}" for i in range(11)] + ["outlier case"]
+
+    chosen = labeller.representative_cases(texts, range(12), matrix, limit=4)
+    assert "outlier case" not in chosen
+
+
+# ---------------------------------------------------------------- feedback store
+
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    import feedback
+
+    monkeypatch.setattr(feedback, "DB_PATH", tmp_path / "feedback.db")
+    conn = feedback.connect()
+    yield feedback, conn
+    conn.close()
+
+
+def test_the_store_holds_no_case_text(store):
+    """The whole PHI position rests on this: opinions about cases, not cases."""
+    feedback, conn = store
+    narrative = "Pt received 10x intended dose of IV morphine overnight."
+
+    feedback.label_case(conn, narrative, "Medication safety", author="lead")
+    feedback.save_name(conn, [feedback.case_key(narrative)], "Medication safety",
+                       [0.1, 0.2, 0.3], author="lead")
+
+    blob = feedback.DB_PATH.read_bytes().decode("utf-8", errors="ignore").lower()
+    for fragment in ("morphine", "10x intended", "overnight"):
+        assert fragment not in blob, f"{fragment!r} was written to the database"
+
+
+def test_case_key_is_stable_across_trivial_reformatting(store):
+    feedback, _ = store
+    a = feedback.case_key("Wrong  dose of insulin\n drawn up overnight.")
+    b = feedback.case_key("wrong dose of insulin drawn up overnight.")
+    assert a == b
+    assert a != feedback.case_key("Wrong dose of heparin drawn up overnight.")
+
+
+def test_a_name_returns_when_the_identical_group_reforms(store):
+    feedback, conn = store
+    keys = [f"case{i}" for i in range(6)]
+    centroid = [1.0, 0.0, 0.0]
+    feedback.save_name(conn, keys, "Medication safety", centroid)
+
+    got = feedback.restore_names(conn, [{"keys": keys, "centroid": centroid}])
+    assert got[0]["name"] == "Medication safety"
+    assert got[0]["match"] == "exact"
+
+
+def test_a_name_carries_to_a_shifted_group_and_says_so(store):
+    """Membership moves between quarters; the name should follow, but be marked
+    as inferred rather than confirmed."""
+    feedback, conn = store
+    feedback.save_name(conn, [f"case{i}" for i in range(6)], "Medication safety",
+                       [1.0, 0.0, 0.0])
+
+    shifted = {"keys": [f"case{i}" for i in range(2, 9)],   # different membership
+               "centroid": [0.99, 0.14, 0.0]}               # nearly the same centre
+    got = feedback.restore_names(conn, [shifted])
+    assert got[0]["name"] == "Medication safety"
+    assert got[0]["match"] == "carried_over"
+    assert got[0]["similarity"] >= feedback.CARRY_OVER_MIN
+
+
+def test_a_name_does_not_leap_onto_an_unrelated_group(store):
+    """Re-applying last quarter's name to a group that has drifted into something
+    else is a worse failure than asking again."""
+    feedback, conn = store
+    feedback.save_name(conn, [f"case{i}" for i in range(6)], "Medication safety",
+                       [1.0, 0.0, 0.0])
+
+    unrelated = {"keys": ["x1", "x2"], "centroid": [0.0, 1.0, 0.0]}
+    got = feedback.restore_names(conn, [unrelated])
+    assert got[0]["name"] is None
+
+
+def test_one_stored_name_cannot_claim_two_groups(store):
+    feedback, conn = store
+    feedback.save_name(conn, ["a", "b"], "Medication safety", [1.0, 0.0, 0.0])
+
+    twins = [{"keys": ["a", "b"], "centroid": [1.0, 0.0, 0.0]},
+             {"keys": ["c", "d"], "centroid": [0.999, 0.01, 0.0]}]
+    got = feedback.restore_names(conn, twins)
+    named = [g["name"] for g in got if g["name"]]
+    assert named == ["Medication safety"]
+
+
+def test_training_set_withholds_labels_with_too_few_examples(store):
+    """A classifier trained on two examples is worse than the clustering it
+    would replace, so a thin label is not offered as training data."""
+    feedback, conn = store
+    for i in range(6):
+        feedback.label_case(conn, f"a case about medication number {i}", "Medication")
+    for i in range(2):
+        feedback.label_case(conn, f"a case about handover number {i}", "Handover")
+
+    ready = feedback.training_set(conn, min_per_label=5)
+    assert set(ready) == {"Medication"}
+    assert len(ready["Medication"]) == 6
+
+
+def test_links_are_recorded_once_regardless_of_order(store):
+    feedback, conn = store
+    feedback.link_cases(conn, "case one text", "case two text", "same")
+    feedback.link_cases(conn, "case two text", "case one text", "different")
+
+    rows = conn.execute("SELECT kind FROM links").fetchall()
+    assert len(rows) == 1, "the mirrored pair was stored as a second vote"
+    assert rows[0]["kind"] == "different"
+
+
+def test_connect_honours_a_reassigned_db_path(tmp_path, monkeypatch):
+    """Regression: DB_PATH was bound as a default argument, so it was fixed at
+    import and every read silently went to the wrong file."""
+    import feedback
+
+    target = tmp_path / "elsewhere.db"
+    monkeypatch.setattr(feedback, "DB_PATH", target)
+    conn = feedback.connect()
+    feedback.save_name(conn, ["a"], "Somewhere else", [1.0])
+    conn.close()
+
+    assert target.exists()
+
+
 # ---------------------------------------------------------------- geometry
 
 @pytest.fixture

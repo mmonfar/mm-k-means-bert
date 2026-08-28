@@ -65,6 +65,15 @@ app/standalone.html
 
 # CSV exported from the canvas, if it lands in the project folder.
 mm_galaxy_export.csv
+mm_galaxy_*.csv
+
+# ---- Human feedback store ----
+# Holds hashes of case narratives rather than the narratives themselves, so it
+# is far less sensitive than the register — but "less sensitive" is not "safe",
+# and it is a record of named clinical failure modes at a specific hospital.
+feedback.db
+feedback.db-journal
+feedback.db-wal
 
 # ---- Marketing ----
 # The whole folder is private: the post copy is unpublished work, and the

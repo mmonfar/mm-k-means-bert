@@ -282,6 +282,65 @@ The rules that follow from that:
 
 ---
 
+## 4.6.2 Naming authority
+
+Three sources may name a group. They are ranked, and the winner is recorded in
+`clusters[].label_source` so the interface never presents a guess and a judgement
+as though they carry equal weight.
+
+| Rank | `label_source` | Origin |
+|---|---|---|
+| 1 | `human`, `human_carried` | a person renamed it; stored in `feedback.db` |
+| 2 | `model` | a local instruct model read the group's central cases |
+| 3 | `terms` | TF-IDF terms clearing 20% coverage |
+| 4 | `numbered` | nothing earned a name |
+
+**The model tier is gated on measured cohesion (≥ 0.25), not on model size.**
+Evidence, from the demo register:
+
+| Group | Cohesion | Qwen2.5-0.5B said | Qwen2.5-1.5B said | Truth |
+|---|---|---|---|---|
+| 1 | 0.35 | Delays reaching theatre | Documentation oversight | CT reporting delays |
+| 3 | 0.31 | Delayed reporting | Time delays | delays to treatment |
+| 2 | 0.28 | Errors in medication administration | Dosage calculation errors | medication errors |
+| 0 | 0.24 | Errors in documentation | Communication failures | handover + equipment |
+| 4 | 0.23 | Delays reaching theatre | Inadequate communication | surgical complications |
+
+Tripling the parameter count did not help, and both models gave two different
+groups the same name. A group with nothing in common has no name; a fluent model
+will supply one regardless. Generated names are therefore validated, de-duplicated
+across groups, gated on cohesion, and always shown next to the exemplar so a
+reader can check the claim in one glance.
+
+## 4.6.3 The feedback store
+
+`feedback.db` (SQLite, stdlib, git-ignored) records human judgements:
+`group_names`, `case_labels`, `links` (same / different), and an append-only
+`events` audit trail carrying author and timestamp.
+
+**No case text is stored.** A case is keyed by `sha256(normalised narrative)[:16]`
+— sufficient to recognise the same case in a later export, insufficient to
+reconstruct one. This is what allows a persistent store to exist at all under
+§4.8's egress rules.
+
+Name persistence across runs, since cluster ids are not stable:
+
+1. **Fingerprint** — `sha256` of the group's sorted case keys. Exact match
+   restores the name as `human`.
+2. **Centroid** — cosine similarity against the stored centroid. Above
+   `CARRY_OVER_MIN` (0.92) the name is restored as `human_carried`, with the
+   similarity published, because it is an inference. Below it, nothing is
+   restored: mislabelling a drifted group with last quarter's name is a worse
+   failure than asking again.
+3. One stored name can claim only one group per run.
+
+**Explicitly not self-training.** No model output is ever recycled as truth. The
+intended endpoint is supervised: once `training_set()` reports enough examples per
+label, a register can be classified into the hospital's own agreed taxonomy
+instead of re-clustered — a taxonomy owned by the people who wrote it.
+
+---
+
 ## 4.7 Ingest contract
 
 Only `Case_Summary` is genuinely required; every other column degrades to a documented

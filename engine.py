@@ -502,6 +502,10 @@ def name_clusters(
             "id": cid,
             "label": headline,
             "label_coverage": cover,
+            # Carried so the workbench can record a human's name for this group
+            # — and match it again next quarter — without re-embedding anything.
+            "centroid": ([round(float(v), 5) for v in matrix[mask].mean(axis=0)]
+                         if matrix is not None and mask.any() else []),
             "color": CLUSTER_PALETTE[cid % len(CLUSTER_PALETTE)],
             "size": int(mask.sum()),
             "keywords": terms[:8],
@@ -673,6 +677,49 @@ def _min_centroid_gap(coords: np.ndarray, labels: np.ndarray) -> float:
 # 5. Emit
 # --------------------------------------------------------------------------------------
 
+def apply_human_names(clusters, texts, labels, matrix) -> int:
+    """Restore names a human gave these groups on an earlier run.
+
+    Silent no-op when there is no feedback store, so the pipeline has no new
+    hard dependency and a fresh checkout behaves exactly as before.
+    """
+    try:
+        import feedback
+    except ImportError:  # pragma: no cover - optional component
+        return 0
+    if not feedback.DB_PATH.exists():
+        return 0
+
+    groups = []
+    for c in clusters:
+        members = np.flatnonzero(labels == c["id"])
+        groups.append({
+            "keys": [feedback.case_key(texts[i]) for i in members],
+            "centroid": (matrix[members].mean(axis=0).tolist()
+                         if len(members) else [0.0] * matrix.shape[1]),
+        })
+
+    conn = feedback.connect()
+    try:
+        restored = feedback.restore_names(conn, groups)
+    finally:
+        conn.close()
+
+    applied = 0
+    for c, r in zip(clusters, restored):
+        if not r["name"]:
+            continue
+        c["label"] = r["name"]
+        c["label_source"] = "human" if r["match"] == "exact" else "human_carried"
+        c["label_match"] = r["match"]
+        c["label_similarity"] = r["similarity"]
+        applied += 1
+
+    if applied:
+        print(f"      note        : {applied} group name(s) restored from feedback.db")
+    return applied
+
+
 def build_payload(
     df: pd.DataFrame,
     coords: np.ndarray,
@@ -683,6 +730,7 @@ def build_payload(
     silhouette: float,
     separation: float,
     source: str,
+    label_model: str = "",
     variance: float | None = None,
     true_coords: np.ndarray | None = None,
     neighbours: list[list[dict]] | None = None,
@@ -735,6 +783,7 @@ def build_payload(
             "projection": projection,
             "silhouette": round(silhouette, 4),
             "cluster_space_dims": CLUSTER_DIMS,
+            "label_model": label_model,
             "separation_gain": round(separation, 3),
             "separation_note": (
                 "Inter-cluster spacing is a presentation transform for legibility. "
@@ -802,6 +851,7 @@ def run(
     projection_mode: str = "auto",
     seed: int = 42,
     overrides: dict[str, str] | None = None,
+    label_model: str | None = None,
 ) -> dict:
     df = load_minutes(input_path, overrides)
     texts = df["Case_Summary"].tolist()
@@ -817,6 +867,22 @@ def run(
     clusters = name_clusters(texts, labels, k, matrix)
     for c, m in zip(clusters, cluster_metrics(matrix, labels, k)):
         c.update(m)
+
+    # Optional: let a small local model read each group and name it. Off unless
+    # asked for, and it can only ever replace a name — never a measurement.
+    model_used = ""
+    if label_model:
+        import labeller
+
+        model_used = labeller.apply(clusters, texts, labels, matrix, label_model)
+    else:
+        for c in clusters:
+            c.setdefault("label_source", "terms" if c.get("keywords") else "numbered")
+
+    # A human's name outranks everything above it. Applied last, so it overwrites
+    # both the keyword label and anything a model wrote — the person who chaired
+    # the meeting is a better authority on what the group is than either.
+    apply_human_names(clusters, texts, labels, matrix)
 
     raw, projection, variance = project(matrix, mode=projection_mode, seed=seed)
     true_coords = rescale(raw)
@@ -835,6 +901,7 @@ def run(
         variance=variance,
         true_coords=true_coords,
         neighbours=nearest_neighbours(matrix),
+        label_model=model_used,
     )
 
     APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -847,7 +914,14 @@ def run(
           + (f"  +  {standalone.relative_to(ROOT)}" if injected else ""))
     print("\n      galaxies discovered:")
     for c in clusters:
-        print(f"        [{c['id']}] {c['size']:>3} cases  {c['label']}")
+        mark = {"model": "~", "terms": " ", "numbered": "?",
+                "human": "*", "human_carried": "*"}.get(
+            c.get("label_source", " "), " ")
+        print(f"        [{c['id']}] {c['size']:>3} cases {mark} {c['label']}")
+    if model_used:
+        print(f"\n      ~ written by {model_used}   * named by a person")
+    elif any(c.get("label_source", "").startswith("human") for c in clusters):
+        print("\n      * named by a person")
     print("\n[mmonfar.] done. Open app/index.html in a browser.")
     return payload
 
@@ -871,6 +945,12 @@ def main() -> None:
     ap.add_argument("--date-col", help="column holding the case date")
     ap.add_argument("--dept-col", help="column holding the department/specialty")
     ap.add_argument("--severity-col", help="column holding severity or harm (1-5, or words)")
+    ap.add_argument("--smart-labels", action="store_true",
+                    help="name each group with a small local language model "
+                         "(~1GB download on first use, runs offline thereafter)")
+    ap.add_argument("--label-model", default=None,
+                    help="model id for --smart-labels (default: "
+                         "Qwen/Qwen2.5-0.5B-Instruct)")
     args = ap.parse_args()
 
     overrides = {
@@ -884,8 +964,14 @@ def main() -> None:
     }
 
     try:
+        model = None
+        if args.smart_labels or args.label_model:
+            import labeller
+
+            model = args.label_model or labeller.DEFAULT_MODEL
+
         run(args.input, k=args.clusters, projection_mode=args.projection, seed=args.seed,
-            overrides=overrides)
+            overrides=overrides, label_model=model)
     except (FileNotFoundError, ValueError) as exc:
         print(f"[mmonfar.] error: {exc}", file=sys.stderr)
         raise SystemExit(1)

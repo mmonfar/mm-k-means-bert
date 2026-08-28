@@ -642,7 +642,18 @@
             // definition of the group. On this register the best available term
             // appears in under a third of its group, so the tooltip states the
             // reach of the name rather than letting it imply completeness.
-            if (c.label_coverage) {
+            if (c.label_source === 'human') {
+                bits.push('Named by a person, and stored — it will be reapplied to ' +
+                    'this group in future runs.');
+            } else if (c.label_source === 'human_carried') {
+                bits.push('Carried over from a name a person gave a very similar ' +
+                    'group earlier (' + Math.round((c.label_similarity || 0) * 100) +
+                    '% match). Rename it if that is no longer right.');
+            } else if (c.label_source === 'model') {
+                bits.push('Drafted by a small local language model from the cases in ' +
+                    'this group. Check it against the typical case above, and rename ' +
+                    'it if it is wrong.');
+            } else if (c.label_coverage) {
                 bits.push('The words in this name appear in about ' +
                     Math.round(c.label_coverage * 100) + '% of its cases — ' +
                     'a hint, not a definition.');
@@ -664,6 +675,41 @@
                 isolated = (isolated === c.id) ? null : c.id;
                 applyFilters();
             });
+
+            // Renaming is the one thing a person knows better than the engine.
+            // The name is stored against the group's membership and its centroid,
+            // so it comes back next quarter even though the cluster id will not.
+            if (live) {
+                const pen = document.createElement('button');
+                pen.type = 'button';
+                pen.className = 'rename';
+                pen.title = 'Rename this group';
+                pen.textContent = '✎';
+                pen.addEventListener('click', async ev => {
+                    ev.stopPropagation();
+                    const next = prompt('Name this group', c.label);
+                    if (next === null) return;
+                    const name = next.trim();
+                    if (!name || name === c.label) return;
+                    busyMain.textContent = 'Saving “' + name + '” and rebuilding…';
+                    busy.hidden = false;
+                    try {
+                        const res = await fetch('/api/name', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ cluster: c.id, name })
+                        });
+                        const out = await res.json();
+                        if (!res.ok) throw new Error(out.error || ('HTTP ' + res.status));
+                        location.reload();
+                    } catch (err) {
+                        busy.hidden = true;
+                        alert('Could not save that name: ' + (err.message || err));
+                    }
+                });
+                b.appendChild(pen);
+            }
+
             legendBox.appendChild(b);
         });
 

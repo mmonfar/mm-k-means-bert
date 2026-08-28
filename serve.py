@@ -201,6 +201,76 @@ class Handler(SimpleHTTPRequestHandler):
         finally:
             _pipeline_lock.release()
 
+    def do_PATCH(self) -> None:  # noqa: N802
+        """Record the name a human gave a group, and rebuild so it takes effect.
+
+        This is the only write in the whole tool that is not derived from the
+        register: it is a person's judgement, and it outranks every generated
+        name. Stored against a fingerprint of the group's members plus its
+        centroid, so it survives into next quarter's export even though cluster
+        ids will not.
+        """
+        if self.path.split("?")[0] != "/api/name":
+            self._json(404, {"error": "no such endpoint"})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(length) or b"{}")
+            cluster_id = int(body["cluster"])
+            name = str(body["name"]).strip()
+        except (ValueError, KeyError, TypeError) as exc:
+            self._json(400, {"error": f"bad request: {exc}"})
+            return
+
+        if not 1 <= len(name) <= 60:
+            self._json(400, {"error": "a name must be 1-60 characters"})
+            return
+
+        payload_path = APP_DIR / "data.json"
+        if not payload_path.exists():
+            self._json(400, {"error": "no galaxy built yet"})
+            return
+
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        group = next((c for c in payload["clusters"] if c["id"] == cluster_id), None)
+        if group is None:
+            self._json(404, {"error": f"no group {cluster_id}"})
+            return
+
+        members = [p for p in payload["points"] if p["cluster"] == cluster_id]
+        if not members:
+            self._json(400, {"error": "that group is empty"})
+            return
+
+        import feedback
+
+        conn = feedback.connect()
+        try:
+            fp = feedback.save_name(
+                conn,
+                [feedback.case_key(p["summary"]) for p in members],
+                name,
+                group.get("centroid") or [],
+                author=self.headers.get("X-Author") or None,
+            )
+            state = feedback.summary(conn)
+        finally:
+            conn.close()
+
+        print(f"[mmonfar.] group {cluster_id} named {name!r} by hand")
+
+        if not _pipeline_lock.acquire(blocking=False):
+            self._json(409, {"error": "a rebuild is already running"})
+            return
+        try:
+            source = self._current_input()
+            engine.run(source, k=payload["meta"]["n_clusters"])
+        finally:
+            _pipeline_lock.release()
+
+        self._json(200, {"ok": True, "fingerprint": fp, "store": state})
+
     def do_DELETE(self) -> None:  # noqa: N802
         """Restore the shipped demo dataset and forget the uploaded register."""
         if self.path.split("?")[0] != "/api/uploads":

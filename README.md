@@ -88,6 +88,8 @@ pipeline the CLI runs.
 | `pytest -q -m "not slow"` | skip the test that needs the MiniLM weights |
 | `python serve.py` | the workbench: serve the canvas and accept register uploads from the page |
 | `python serve.py --port 9000 --no-browser` | same, on another port, without opening a browser |
+| `python engine.py --smart-labels` | name each group with a small local model (~1 GB on first use) |
+| `python engine.py --label-model <id>` | use a different local instruct model |
 
 First run of `engine.py` downloads the MiniLM weights (~90 MB) into the HuggingFace cache.
 Every run after that is fully offline.
@@ -274,6 +276,77 @@ folder (or push `app/` to a `gh-pages` branch). Nothing needs building.
 
 ---
 
+## Naming the groups
+
+Three sources, in increasing order of authority. Every group records which one
+named it, and the interface says so on hover.
+
+| Source | How it works | How good it is |
+|---|---|---|
+| **Keywords** (default) | distinctive terms that clear 20% coverage of the group | works for about two groups in five; the rest are honestly numbered |
+| **A local model** (`--smart-labels`) | a ~1 GB instruct model reads the six cases nearest the group's centre and names them | roughly one group in three is right — treat every name as a draft |
+| **A person** | rename a group in the app; the name is stored and reapplied on later runs | authoritative, and the only source that is reliably correct |
+
+### `--smart-labels`, and why it is off by default
+
+```bash
+python engine.py --smart-labels
+```
+
+No new dependency — `transformers` and `torch` already arrive with
+sentence-transformers — but it downloads ~1 GB of Apache-2.0 weights on first use
+and then runs offline forever. Generation is greedy, so two runs of the same
+register produce the same names.
+
+**It is not reliable enough to trust.** On the demo register the 0.5B model named
+the medication group correctly, and called the CT-reporting-delay group "Delays
+reaching theatre" — fluent, confident and wrong. A 1.5B model was no better; it
+mislabelled the same group as "Documentation oversight" and gave two groups
+near-duplicate names. The fault is not model size: a group with cohesion 0.23 has
+no single failure to name, and a fluent model will invent one anyway.
+
+So a model may only name a group whose measured cohesion clears 0.25. Below that
+the group keeps its number. Names are also validated (rejecting sentences,
+refusals and case numbers) and de-duplicated, and each is marked as
+model-written in the payload and the interface.
+
+### Human names, and how they survive
+
+Hover a group in the rail and click the pencil. The name goes into a local
+SQLite store, `feedback.db`, and outranks anything the keywords or the model
+produced.
+
+It comes back on later runs, which is the point: cluster ids are meaningless
+between quarters, so a name is stored against **a fingerprint of the group's
+membership** and **its centroid**. An identical group returns the name exactly; a
+group that has merely shifted — a few cases added, one moved out — gets it back
+by centroid similarity above 0.92, marked as *carried over* with its similarity
+so nobody mistakes an inference for a re-confirmation. Below that threshold the
+tool asks again rather than pinning last quarter's name on something new.
+
+**The store holds no case text.** Cases are keyed by a truncated SHA-256 of the
+normalised narrative — enough to recognise the same case next quarter, not enough
+to read one back. A test asserts that no fragment of a narrative reaches the
+file. `feedback.db` is git-ignored regardless.
+
+### What this is not
+
+It is not self-training. Nothing feeds a model's own guess back to it as truth: a
+model that learns from its own output entrenches whatever it already got wrong,
+and in patient safety that is how a blind spot becomes policy. The store records
+**human** decisions only — names, case reassignments, and *these two are / are
+not the same failure* — and every write is stamped with an author and time in an
+append-only `events` table.
+
+The payoff is one step further out. `feedback.training_set()` returns the
+hospital's own labelled cases once a label has enough examples, at which point
+next quarter's register can be **classified into the taxonomy this hospital
+agreed** rather than re-clustered from scratch. That is the version worth
+building toward, and it is reachable from here because the labels are already
+being collected in the right shape.
+
+---
+
 ## Where data can leak, and what stops it
 
 The realistic accident is: someone runs this on a real register, then commits.
@@ -285,6 +358,7 @@ The realistic accident is: someone runs this on a real register, then commits.
 | `app/data.json` | yes | **no** |
 | `app/standalone.html` (payload inlined) | yes | **no** |
 | `app/index.html` | **no** — empty payload, fetches `data.json` | yes |
+| `feedback.db` | **no** — hashes of narratives, never the narratives | **no** |
 | `marketing/` | no | **no** — unpublished copy, kept private |
 | `engine.py`, `serve.py`, `tests/`, `SPECIFICATION.md`, `README.md` | no | yes |
 
