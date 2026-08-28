@@ -69,6 +69,36 @@ These are not preferences. Each exists because it broke once.
 6. **Never invent clinical content.** The corpus in `data_generator.py` is
    synthetic and must stay synthetic; no real case, clinician or trust.
 
+## Standing task: periodic lite-tooling review
+
+The owner has authorised proposing lighter or better tooling without being asked.
+Do it when a session has spare room, not as a reason to churn.
+
+A candidate is worth raising only if it clears every one of these:
+
+1. **The default path stays lite.** `import engine` must not pull `torch` or
+   `transformers`.
+2. **Offline after setup.** No API key, no runtime network call.
+3. **Nothing derived from a register is committed, and no PHI leaves the box.**
+4. **Measured, not asserted.** If a swap moves a documented number, re-measure,
+   update the docs and update the test in the same change.
+5. **Prefer removing a dependency to adding one.** The 0.5B naming model was
+   built, measured at roughly one group in three, and demoted to opt-in rather
+   than kept because it existed.
+
+Worth watching specifically:
+
+- a smaller or better-calibrated sentence embedding model than `all-MiniLM-L6-v2`
+  that would raise stability above 0.60 — the single most valuable open
+  improvement (see `docs/sdd.md` Phase 6);
+- `umap-learn` becoming a lighter install, since the engine already prefers it
+  and silently falls back to PCA;
+- anything that removes the Three.js CDN import, which is the one runtime
+  network dependency left in the app.
+
+Report findings as a recommendation with the benchmark attached. "Newer" is not
+a reason; a measured improvement is.
+
 ## Layout deviation from the standard template
 
 There is no `src/`. The modules are flat at the root — `engine.py`,

@@ -64,6 +64,18 @@ acceptance criteria met, not a feeling.
 | `must-link` / `cannot-link` honoured | Pending | recorded links constrain the next clustering | High | `coder` |
 | Drift report | Pending | flag when a carried-over name's group has moved materially | Medium | `coder` |
 
+## Standing — periodic tooling review
+
+Not a phase; a recurring check. Authorised 2026-08-28. Criteria and the watch
+list are in [`../CLAUDE.md`](../CLAUDE.md). A proposal without a benchmark is
+rejected at audit.
+
+| Candidate | Why it would matter | Bar to clear |
+|---|---|---|
+| Alternative embedding model | stability is 0.57 against a 0.60 bar — this is the one number worth moving | beats 0.70 / 0.57 on the shipped corpus |
+| `umap-learn` when it installs cleanly | engine already prefers it, falls back to PCA | no new build toolchain |
+| Vendored Three.js | removes the last runtime network dependency | app/ stays under a few hundred KB |
+
 ## Phase 7 — not started
 
 | Task | Acceptance criterion | Effort |
