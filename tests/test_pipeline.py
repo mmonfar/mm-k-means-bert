@@ -685,6 +685,69 @@ def test_tracked_template_carries_no_case_data():
     assert ">null<" in block
 
 
+# ---------------------------------------------------------------- the app boots
+
+@pytest.mark.slow
+def test_the_app_actually_boots_with_no_javascript_errors(tmp_path):
+    """Load the real page in a real browser and assert it reaches the galaxy.
+
+    This exists because of a bug that shipped: the rename button read `live`
+    while the legend was being built, but `const live` was declared 600 lines
+    further down. A `const` read inside its temporal dead zone throws a
+    ReferenceError rather than reading as undefined, so the whole module died,
+    the boot screen never lifted, and the app showed a brand lockup forever.
+
+    Nothing cheaper catches it. `node --check` passes — the syntax is valid.
+    Only executing the module finds it, so the test executes the module.
+    """
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import socket
+    import threading
+    from functools import partial
+
+    app_dir = ROOT / "app"
+    if not (app_dir / "data.json").exists():
+        pytest.skip("no payload built; run engine.py first")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    errors: list[str] = []
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+            page.on("console",
+                    lambda m: errors.append(f"console: {m.text}")
+                    if m.type == "error" else None)
+
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3500)
+
+            assert not errors, "the app threw on load:\n  " + "\n  ".join(errors)
+
+            # The boot screen must actually hand over.
+            assert "gone" in (page.evaluate(
+                "document.getElementById('boot').className") or "")
+            # And the galaxy must be there, not an empty shell.
+            assert page.evaluate(
+                "document.querySelectorAll('#legend-items .chan').length") > 0
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 # ---------------------------------------------------------------- semantics (slow)
 
 @pytest.mark.slow

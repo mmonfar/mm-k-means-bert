@@ -593,6 +593,12 @@
            One predicate drives everything: the dim buffer, the pick test, the
            counter and the export. */
 
+        // Declared here, not down in the upload section: the rename button on
+        // each galaxy row reads it while the legend is being built, and a `const`
+        // read before its declaration is a ReferenceError, not undefined. That
+        // threw before the boot screen could hand over, so the app never appeared.
+        const live = location.protocol.startsWith('http');
+
         const legendBox = document.getElementById('legend-items');
         const deptBox = document.getElementById('dept-chips');
         const shownEl = document.getElementById('stat-shown');
@@ -1247,7 +1253,6 @@
         const fileInput = document.getElementById('file');
         const note = document.getElementById('data-note');
         const dataActions = document.getElementById('data-actions');
-        const live = location.protocol.startsWith('http');
 
         // The note is for things the user has to act on — an error, or the reason
         // uploading is unavailable. Narrating a successful load back at them

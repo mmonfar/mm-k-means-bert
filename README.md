@@ -29,7 +29,7 @@ Everything runs on a laptop. No API keys. No cloud inference. No PHI leaves the 
 | Brand | `app/assets/brand.css`, typefaces inlined as base64 | no font request; renders identically on an air-gapped machine |
 | Naming | coverage-gated terms → optional local model → a person | see [Naming the groups](#naming-the-groups) |
 | Feedback | `feedback.py`, stdlib `sqlite3` | keeps human names across runs, stores no case text |
-| Tests | `pytest` | 47 tests: ingest, geometry, payload, labelling and feedback contracts |
+| Tests | `pytest` | 55 tests: ingest, geometry, payload, labelling, feedback, and a headless browser check that the app actually boots |
 
 ---
 
@@ -85,7 +85,7 @@ pipeline the CLI runs.
 | `python engine.py --input x.csv --text-col "What happened"` | name a column explicitly when the synonym table misses it |
 | `python engine.py --clusters 7 --projection pca` | change k, or force a projection backend |
 | `pytest -q` | full contract suite |
-| `pytest -q -m "not slow"` | skip the test that needs the MiniLM weights |
+| `pytest -q -m "not slow"` | skip the tests needing the MiniLM weights or a browser |
 | `python serve.py` | the workbench: serve the canvas and accept register uploads from the page |
 | `python serve.py --port 9000 --no-browser` | same, on another port, without opening a browser |
 | `python engine.py --smart-labels` | name each group with a small local model (~1 GB on first use) |
