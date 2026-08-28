@@ -101,6 +101,9 @@ or opened directly from disk.
 
 ```
 mm-k-means-bert/
+├── CLAUDE.md                   # orchestrator contract and repo hard rules
+├── docs/sdd.md                 # delivery contract: tasks, status, criteria
+├── .claude/agents/             # coder, docs-writer, janitor
 ├── .gitignore
 ├── SPECIFICATION.md            # this document
 ├── README.md                   # setup, stack, execution scripts
@@ -116,6 +119,7 @@ mm-k-means-bert/
 │   └── assets/
 │       ├── brand.css           # canonical mmonfar. brand layer, fonts inlined
 │       └── styles.css          # app layer, composes brand tokens only
+├── quality.py                  # QC: is the grouping real, and why each case is here
 ├── labeller.py                 # optional local-model group naming
 ├── feedback.py                 # human judgements (SQLite, no case text)
 ├── feedback.db                 # generated, git-ignored
@@ -378,6 +382,52 @@ Name persistence across runs, since cluster ids are not stable:
 intended endpoint is supervised: once `training_set()` reports enough examples per
 label, a register can be classified into the hospital's own agreed taxonomy
 instead of re-clustered — a taxonomy owned by the people who wrote it.
+
+---
+
+## 4.6.5 Quality control
+
+A clustering has no right answer to be checked against, so the honest question is
+not "is it correct" but "is it anything at all". Three checks answer it, all from
+the embeddings already computed, none needing labels:
+
+| Check | Method | Passing |
+|---|---|---|
+| Neighbour agreement | share of cases whose single nearest case (full 384-d cosine) is in the same group, against a chance baseline of `Σ share²` — not `1/k`, because uneven group sizes raise the floor | lift ≥ 2.0 |
+| Stability | 12 rounds of re-clustering on random 80% subsamples; share of co-grouped pairs that stay co-grouped | ≥ 0.60 |
+| Versus shuffled | the same pipeline on column-shuffled data, which preserves every marginal and destroys the joint structure | real > 1.5 × shuffled |
+
+Two of three must pass for "usable, with caveats"; three for "structure found".
+
+**Measured on the shipped corpus at k=5: 1 of 3 — "weak; treat the grouping as a
+prompt, not a finding."** Neighbour agreement 0.70 against 0.21 at chance (3.3×,
+passes); stability 0.57 (marginal fail); silhouette 0.124 against a shuffled
+0.098 (fails). At k=6 every figure is worse: 0.57, 0.47, 0.128/0.093.
+
+This is recorded rather than softened. The grouping is clearly not random, and it
+is also not reliable enough to settle a question on its own — which is the entire
+justification for per-case justification, human filing and the refinement loop.
+
+### Per-case justification
+
+Every case carries `why`: similarity to its own centroid, similarity to the
+nearest rival, the margin, how many of its three nearest neighbours share its
+group, and a sentence. A case whose margin is under `BORDERLINE_MARGIN` (0.02) is
+flagged `borderline` and styled differently, because an assignment the algorithm
+nearly made the other way must not be presented as settled.
+
+### The run log
+
+`feedback.db` records every run:
+
+* `runs` — `k`, silhouette, shuffled silhouette, stability, agreement, chance, verdict
+* `assignments` — one row per case per run: cluster, label, the four numbers, and the reason
+
+Which makes "does 5 groups work better than 6 on our data?" a query — `best_k()`
+ranks recorded runs on stability then agreement — and makes "why is this case
+here, and did it move?" answerable months later via `case_history()`. Only
+hashes are stored, so the log remains a record of decisions rather than a second
+copy of the register.
 
 ---
 

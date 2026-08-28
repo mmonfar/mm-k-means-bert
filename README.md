@@ -27,9 +27,10 @@ Everything runs on a laptop. No API keys. No cloud inference. No PHI leaves the 
 | Render | Three.js r160 via CDN ESM | zero build step, single static folder |
 | Workbench | `serve.py`, stdlib `http.server` only | drop a register on the page; nothing to install, ~200 lines an IG team can read |
 | Brand | `app/assets/brand.css`, typefaces inlined as base64 | no font request; renders identically on an air-gapped machine |
-| Naming | coverage-gated terms → optional local model → a person | see [Naming the groups](#naming-the-groups) |
+| Quality control | `quality.py`, numpy only | says on every run whether the grouping beats chance, and why each case sits where it does |
+| Naming | coverage-gated terms → the house taxonomy → a person | see [Naming the groups](#naming-the-groups) |
 | Feedback | `feedback.py`, stdlib `sqlite3` | keeps human names across runs, stores no case text |
-| Tests | `pytest` | 55 tests: ingest, geometry, payload, labelling, feedback, and a headless browser check that the app actually boots |
+| Tests | `pytest` | 65 tests: ingest, geometry, payload, labelling, feedback, quality control, and a headless browser check that the app actually boots |
 
 ---
 
@@ -84,6 +85,7 @@ pipeline the CLI runs.
 | `python engine.py --input export.csv` | run it against your own de-identified extract (.xlsx/.xls/.xlsm/.csv/.tsv) |
 | `python engine.py --input x.csv --text-col "What happened"` | name a column explicitly when the synonym table misses it |
 | `python engine.py --clusters 7 --projection pca` | change k, or force a projection backend |
+| `python -c "import feedback,json; c=feedback.connect(); print(json.dumps(feedback.run_history(c)[:5],indent=1))"` | the last five runs and how each scored |
 | `pytest -q` | full contract suite |
 | `pytest -q -m "not slow"` | skip the tests needing the MiniLM weights or a browser |
 | `python serve.py` | the workbench: serve the canvas and accept register uploads from the page |
@@ -148,6 +150,7 @@ your row count, the engine reduces it rather than failing.
 | A diffuse galaxy | varied one-offs |
 | A star drifting between two galaxies | a case that failed in two ways at once — usually the most instructive one in the room |
 | A big star | high severity (`Severity_Score` 4–5) |
+| A case marked **borderline** | it sits between two groups; the tool is telling you not to rely on which one it picked |
 
 ### Loading your own register from the page
 
@@ -258,8 +261,9 @@ mm-k-means-bert/
 │   └── assets/
 │       ├── brand.css         canonical mmonfar. brand layer, fonts inlined
 │       └── styles.css        app layer, composes brand tokens only
+├── quality.py                is the grouping real? per-case justification
 ├── labeller.py               optional local-model naming (--smart-labels)
-├── feedback.py               human judgements: SQLite, no case text
+├── feedback.py               human judgements + the run log (SQLite, no case text)
 ├── feedback.db               generated (git-ignored)
 └── tests/test_pipeline.py
 ```
@@ -484,6 +488,24 @@ one: the copy is unpublished and the renders are large binaries.
 Two things this does *not* do: it has no de-identification stage, so registers must be
 de-identified upstream; and `--host` can bind the workbench beyond localhost, which
 prints a warning and should not be used with real data.
+
+---
+
+## Working on this repo
+
+The project carries its own orchestration contract, so a Claude Code session
+picks up where the last one stopped rather than re-deriving the state:
+
+| File | Purpose |
+|---|---|
+| [`CLAUDE.md`](CLAUDE.md) | how the orchestrator and sub-agents operate here, and the rules that exist because something broke once |
+| [`docs/sdd.md`](docs/sdd.md) | the delivery contract: every task, its status, and the test that proves it done |
+| [`.claude/agents/`](.claude/agents) | `coder`, `docs-writer`, `janitor` — scoped roles with their own tools and effort levels |
+
+`docs/sdd.md` is the *what*; [`SPECIFICATION.md`](SPECIFICATION.md) is the *why*.
+Neither repeats the other. A task counts as done only when its acceptance
+criterion is pinned by a named test — all 19 tests cited in the contract are
+verified to exist.
 
 ---
 

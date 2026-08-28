@@ -82,6 +82,12 @@ feedback.db-wal
 # `python marketing/generate_promo_viz.py`.
 marketing/
 
+# ---- Orchestrator ----
+# Agent definitions and shared settings ARE tracked: they are how the project
+# is worked on. Personal overrides and run state are not.
+.claude/settings.local.json
+.orchestrator/
+
 # ---- Model + build caches ----
 .cache/
 models/
