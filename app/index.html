@@ -303,11 +303,17 @@
     <script id="mm-payload" type="application/json">null</script>
     <!-- MM_PAYLOAD_END -->
 
+    <!-- Three.js is vendored, not fetched. A CDN import is executable code
+         pulled from a third party at run time, on a page that renders patient
+         case narratives — a compromised or hijacked CDN could read and exfiltrate
+         them, and no integrity hash was possible through an import map. Vendoring
+         removes the last runtime network call: the app now runs air-gapped, which
+         is what "nothing leaves the building" has to mean. -->
     <script type="importmap">
     {
       "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        "three": "./vendor/three.module.js",
+        "three/addons/controls/OrbitControls.js": "./vendor/OrbitControls.js"
       }
     }
     </script>

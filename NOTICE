@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0. See LICENSE.
 
 This product bundles or depends on the following, under their own licences:
 
-  Three.js                        MIT          https://threejs.org
+  Three.js r160                   MIT          vendored in app/vendor/
   sentence-transformers           Apache-2.0
   all-MiniLM-L6-v2 (weights)      Apache-2.0   downloaded at first run
   Qwen2.5-Instruct (weights)      Apache-2.0   optional, only with --smart-labels

@@ -24,7 +24,7 @@ Everything runs on a laptop. No API keys. No cloud inference. No PHI leaves the 
 | Clustering | PCA(10) + re-normalise, then `sklearn.cluster.KMeans` (k=5) | transparent, deterministic, explainable in a meeting; the PCA step roughly doubles agreement with ground truth vs. clustering the raw 384-d vectors |
 | Labelling | coverage-gated TF-IDF, plus a semantic exemplar | a name must describe ≥20% of its group or the group is numbered instead; every group also carries its most typical case |
 | Projection | `umap-learn` if present, else `sklearn` PCA | 384-d → x, y, z |
-| Render | Three.js r160 via CDN ESM | zero build step, single static folder |
+| Render | Three.js r160, vendored in `app/vendor/` | zero build step, and no runtime network call at all — the page loads nothing from a third party |
 | Workbench | `serve.py`, stdlib `http.server` only | drop a register on the page; nothing to install, ~200 lines an IG team can read |
 | Brand | `app/assets/brand.css`, typefaces inlined as base64 | no font request; renders identically on an air-gapped machine |
 | Quality control | `quality.py`, numpy only | says on every run whether the grouping beats chance, and why each case sits where it does |
