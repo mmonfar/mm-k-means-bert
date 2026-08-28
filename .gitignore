@@ -83,9 +83,11 @@ feedback.db-wal
 marketing/
 
 # ---- Orchestrator ----
-# Agent definitions and shared settings ARE tracked: they are how the project
-# is worked on. Personal overrides and run state are not.
-.claude/settings.local.json
+# Kept local. The agent prompts and permission allowlists describe how this
+# machine is worked on rather than what the tool does, and they are of no use to
+# anyone cloning it. CLAUDE.md and docs/sdd.md stay tracked: those are the
+# project's own rules and status, which a reader has a legitimate interest in.
+.claude/
 .orchestrator/
 
 # ---- Model + build caches ----
