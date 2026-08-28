@@ -683,7 +683,37 @@ def _min_centroid_gap(coords: np.ndarray, labels: np.ndarray) -> float:
 HOUSE_NAME_AGREEMENT = 0.60
 
 
-def apply_house_taxonomy(clusters, labels, matrix) -> list[dict]:
+def record_run(source, k, texts, labels, clusters, qc, why) -> None:
+    """Log this run and every assignment in it, if a store exists.
+
+    Silent when feedback.py is absent or no store has been created — the
+    pipeline gains no hard dependency, and a first-time user sees no difference.
+    """
+    try:
+        import feedback
+    except ImportError:  # pragma: no cover - optional component
+        return
+    if not feedback.DB_PATH.exists():
+        return
+
+    conn = feedback.connect()
+    try:
+        feedback.record_run(
+            conn,
+            source=source,
+            k=k,
+            n_cases=len(texts),
+            qc=qc,
+            keys=[feedback.case_key(t) for t in texts],
+            clusters=clusters,
+            labels=labels,
+            justification=why,
+        )
+    finally:
+        conn.close()
+
+
+def apply_house_taxonomy(clusters, labels, matrix, texts=None) -> list[dict]:
     """Classify every case against labels a human taught the store earlier.
 
     Returns one record per case, in row order, for the payload. Also names a
@@ -691,7 +721,8 @@ def apply_house_taxonomy(clusters, labels, matrix) -> list[dict]:
     which is how the tool converges on the hospital's own vocabulary instead of
     TF-IDF's, without anything generative involved.
     """
-    blank = [{"label": None, "confidence": None, "margin": None}] * len(labels)
+    blank = [{"label": None, "confidence": None, "margin": None}
+             for _ in range(len(labels))]
     try:
         import feedback
     except ImportError:  # pragma: no cover - optional component
@@ -701,9 +732,22 @@ def apply_house_taxonomy(clusters, labels, matrix) -> list[dict]:
 
     conn = feedback.connect()
     try:
-        if not any(n >= feedback.MIN_EXAMPLES for n in feedback.taxonomy(conn).values()):
-            return blank
-        predictions = feedback.classify(conn, matrix)
+        ready = any(n >= feedback.MIN_EXAMPLES
+                    for n in feedback.taxonomy(conn).values())
+        predictions = (feedback.classify(conn, matrix) if ready else list(blank))
+
+        # A case filed by hand is not a prediction and cannot be overruled by
+        # one. The clustering proposes; the clinician disposes.
+        filed = feedback.filed_cases(conn)
+        if filed and texts is not None:
+            for i, text in enumerate(texts):
+                name = filed.get(feedback.case_key(text))
+                if name:
+                    predictions[i] = {"label": name, "confidence": 1.0,
+                                      "margin": None, "source": "human"}
+            n_filed = sum(1 for p_ in predictions if p_.get("source") == "human")
+            if n_filed:
+                print(f"      note        : {n_filed} case(s) filed by hand")
     finally:
         conn.close()
 
@@ -785,6 +829,8 @@ def build_payload(
     source: str,
     label_model: str = "",
     house: list[dict] | None = None,
+    qc: dict | None = None,
+    why: list[dict] | None = None,
     variance: float | None = None,
     true_coords: np.ndarray | None = None,
     neighbours: list[list[dict]] | None = None,
@@ -825,6 +871,11 @@ def build_payload(
                 # where the tool is not entitled to an opinion yet.
                 "house": (house[i]["label"] if house and house[i]["label"] else None),
                 "house_confidence": (house[i]["confidence"] if house else None),
+                # "human" where a person filed it, otherwise the classifier's.
+                "house_source": (house[i].get("source", "taxonomy")
+                                 if house and house[i]["label"] else None),
+                # Why this case sits in this group, in numbers a reader can check.
+                "why": (why[i] if why else None),
             }
         )
 
@@ -860,6 +911,7 @@ def build_payload(
                 "figures on each case card are the measurement."
             ),
             "generated": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
+            "qc": qc or {},
         },
         "departments": departments,
         "clusters": clusters,
@@ -941,7 +993,7 @@ def run(
     # now. This is the whole refinement loop: no model, no training run — the
     # embeddings are already here, and a label is the mean of the cases a person
     # filed under it. It sharpens every time somebody names something.
-    house = apply_house_taxonomy(clusters, labels, matrix)
+    house = apply_house_taxonomy(clusters, labels, matrix, texts)
 
     # A human's name for THIS group outranks everything above it. Applied last,
     # so it overwrites the taxonomy, the keyword label and anything a model
@@ -956,6 +1008,19 @@ def run(
         f"min centroid gap={_min_centroid_gap(coords, labels):.1f}u  gain={separation:.2f}x"
     )
 
+    # Quality control, on every run. Without it the map is a picture somebody is
+    # asked to trust; with it, the reader can see whether the grouping is real.
+    import quality
+
+    qc = quality.report(matrix, labels, k, seed)
+    why = quality.per_case(matrix, labels)
+    na = qc["neighbour_agreement"]
+    print(f"      quality     : {qc['verdict']}  "
+          f"({qc['checks_passed']}/3)  nearest-case agreement "
+          f"{na['agreement']:.0%} vs {na['chance']:.0%} at chance")
+
+    record_run(input_path.name, k, texts, labels, clusters, qc, why)
+
     payload = build_payload(
         df, coords, labels, clusters,
         projection=projection,
@@ -967,6 +1032,8 @@ def run(
         neighbours=nearest_neighbours(matrix),
         label_model=model_used,
         house=house,
+        qc=qc,
+        why=why,
     )
 
     APP_DIR.mkdir(parents=True, exist_ok=True)

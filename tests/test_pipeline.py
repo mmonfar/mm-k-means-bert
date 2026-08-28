@@ -219,6 +219,175 @@ def test_representative_cases_come_from_the_centre_not_the_edge():
     assert "outlier case" not in chosen
 
 
+# ---------------------------------------------------------------- quality control
+
+def _three_blobs(sep=6.0, n=30, seed=0):
+    """Three genuinely separate clouds, and the labels that describe them."""
+    rng = np.random.default_rng(seed)
+    centres = np.array([[sep, 0, 0], [0, sep, 0], [0, 0, sep]], dtype=float)
+    matrix = np.vstack([c + rng.normal(0, 1.0, (n, 3)) for c in centres])
+    return matrix, np.repeat([0, 1, 2], n)
+
+
+def test_quality_recognises_real_structure():
+    import quality
+
+    matrix, labels = _three_blobs()
+    agreement = quality.neighbour_agreement(matrix, labels)
+
+    assert agreement["agreement"] > 0.9
+    assert agreement["lift"] > 2.5, "clear blobs should beat chance comfortably"
+
+
+def test_quality_is_not_fooled_by_noise():
+    """The check that matters: on structureless data it must NOT claim structure."""
+    import quality
+
+    rng = np.random.default_rng(3)
+    noise = rng.normal(0, 1, (90, 3))
+    labels = rng.integers(0, 3, 90)          # an arbitrary partition of nothing
+
+    agreement = quality.neighbour_agreement(noise, labels)
+    assert agreement["lift"] < 1.6, (
+        f"random labels on random data scored a lift of {agreement['lift']} — "
+        "the check would be endorsing noise"
+    )
+
+
+def test_the_chance_baseline_accounts_for_uneven_groups():
+    """Chance is not 1/k when one group is much bigger: a case is more likely to
+    land beside a member of a large group, and the baseline has to say so."""
+    import quality
+
+    matrix, _ = _three_blobs()
+    lopsided = np.array([0] * 80 + [1] * 5 + [2] * 5)
+    even = np.repeat([0, 1, 2], 30)
+
+    assert (quality.neighbour_agreement(matrix, lopsided)["chance"]
+            > quality.neighbour_agreement(matrix, even)["chance"])
+
+
+def test_a_borderline_case_is_reported_as_borderline():
+    import quality
+
+    matrix, labels = _three_blobs(sep=6.0, n=20, seed=1)
+    # A case placed exactly between two centres belongs to neither.
+    matrix = np.vstack([matrix, [[3.0, 3.0, 0.0]]])
+    labels = np.append(labels, 0)
+
+    why = quality.per_case(matrix, labels)
+    assert why[-1]["borderline"], "a case midway between two groups is not settled"
+    assert "borderline" in why[-1]["reason"]
+
+    settled = [w for w in why[:-1] if not w["borderline"]]
+    assert settled, "well-separated cases should not all be flagged"
+
+
+def test_every_case_gets_a_reason(store):
+    """No assignment is allowed to be unexplained."""
+    import quality
+
+    matrix, labels = _three_blobs(n=12)
+    why = quality.per_case(matrix, labels)
+
+    assert len(why) == len(labels)
+    for w in why:
+        assert w["reason"]
+        assert -1.0001 <= w["to_own"] <= 1.0001
+        assert 0 <= w["neighbours_agreeing"] <= 3
+
+
+def test_the_verdict_is_honest_about_weak_structure():
+    import quality
+
+    rng = np.random.default_rng(5)
+    noise = rng.normal(0, 1, (60, 8))
+    report = quality.report(noise, rng.integers(0, 3, 60), 3)
+
+    assert report["checks_passed"] <= 1
+    assert "weak" in report["verdict"]
+
+
+# ---------------------------------------------------------------- the run log
+
+def test_a_run_is_recorded_with_a_reason_for_every_case(store):
+    feedback, conn = store
+    import quality
+
+    matrix, labels = _three_blobs(n=10)
+    clusters = [{"id": i, "label": f"Group {i + 1}"} for i in range(3)]
+    qc = quality.report(matrix, labels, 3)
+    why = quality.per_case(matrix, labels)
+    keys = [feedback.case_key(f"case number {i}") for i in range(len(labels))]
+
+    run_id = feedback.record_run(
+        conn, source="test.xlsx", k=3, n_cases=len(labels), qc=qc,
+        keys=keys, clusters=clusters, labels=labels, justification=why)
+
+    rows = conn.execute(
+        "SELECT * FROM assignments WHERE run_id = ?", (run_id,)).fetchall()
+    assert len(rows) == len(labels)
+    assert all(r["reason"] for r in rows), "an assignment without a reason is a black box"
+
+    logged = feedback.run_history(conn)[0]
+    assert logged["k"] == 3
+    assert logged["verdict"] == qc["verdict"]
+
+
+def test_the_run_log_stores_no_case_text(store):
+    feedback, conn = store
+    import quality
+
+    matrix, labels = _three_blobs(n=10)
+    narrative = "Pt received 10x intended dose of IV morphine overnight."
+    keys = [feedback.case_key(narrative)] + [
+        feedback.case_key(f"other {i}") for i in range(len(labels) - 1)]
+
+    feedback.record_run(
+        conn, source="s", k=3, n_cases=len(labels),
+        qc=quality.report(matrix, labels, 3), keys=keys,
+        clusters=[{"id": i, "label": f"G{i}"} for i in range(3)],
+        labels=labels, justification=quality.per_case(matrix, labels))
+
+    blob = feedback.DB_PATH.read_bytes().decode("utf-8", errors="ignore").lower()
+    assert "morphine" not in blob
+
+
+def test_best_k_is_decided_on_recorded_evidence(store):
+    """"Which number of groups?" should be answerable from history, not memory."""
+    feedback, conn = store
+    for k, stab, agree in [(5, 0.72, 0.70), (6, 0.44, 0.57), (5, 0.70, 0.69)]:
+        conn.execute(
+            "INSERT INTO runs (created_at, source, k, n_cases, silhouette,"
+            " shuffled, stability, agreement, chance, verdict)"
+            " VALUES (datetime('now'),?,?,?,?,?,?,?,?,?)",
+            ("s.xlsx", k, 100, 0.12, 0.09, stab, agree, 0.2, "x"))
+    conn.commit()
+
+    assert feedback.best_k(conn)["k"] == 5
+
+
+def test_case_history_shows_where_a_case_has_been(store):
+    feedback, conn = store
+    import quality
+
+    matrix, labels = _three_blobs(n=10)
+    narrative = "a case that moves between runs"
+    keys = [feedback.case_key(narrative)] + [
+        feedback.case_key(f"filler {i}") for i in range(len(labels) - 1)]
+
+    for k in (3, 3):
+        feedback.record_run(
+            conn, source="s", k=k, n_cases=len(labels),
+            qc=quality.report(matrix, labels, 3), keys=keys,
+            clusters=[{"id": i, "label": f"Group {i}"} for i in range(3)],
+            labels=labels, justification=quality.per_case(matrix, labels))
+
+    history = feedback.case_history(conn, narrative)
+    assert len(history) == 2
+    assert all(h["reason"] for h in history)
+
+
 # ---------------------------------------------------------------- feedback store
 
 @pytest.fixture
@@ -499,7 +668,9 @@ def test_payload_shape_and_bounds():
             "cluster", "department", "severity", "date", "summary", "nearest",
             # What the hospital's own taxonomy makes of this case; null until it
             # has been taught enough to have an opinion.
-            "house", "house_confidence",
+            "house", "house_confidence", "house_source",
+            # Why this case sits in this group — no assignment is unexplained.
+            "why",
         }
         assert 0 <= p["cluster"] < 5
         assert 1 <= p["severity"] <= 5

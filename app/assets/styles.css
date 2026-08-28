@@ -1688,3 +1688,74 @@ dl.method dd {
     color: var(--teal);
     background: var(--teal-16);
 }
+
+/* ---- filing ----
+   Where this case sits in the hospital's own taxonomy, and who put it there.
+   A machine suggestion and a clinician's decision must not look alike. */
+
+.filing {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 10px 0 0;
+}
+
+.filing[hidden] {
+    display: none;
+}
+
+.filing-label {
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+}
+
+.filing-value {
+    font-size: var(--fs-small);
+    font-weight: 600;
+}
+
+.filing-value.by-hand {
+    color: var(--teal);
+}
+
+.filing-value.by-machine {
+    color: var(--ink-60);
+    font-weight: 500;
+    font-style: italic;
+}
+
+.filing-value.unfiled {
+    color: var(--ink-38);
+    font-weight: 500;
+}
+
+.filing .link {
+    margin-left: auto;
+}
+
+/* ---- why this case is here ----
+   The grouping is a proposal. A borderline assignment has to look different
+   from a settled one, or the interface is overstating what it knows. */
+
+.why {
+    margin: 0;
+    padding: 9px 11px;
+    border-left: 2px solid var(--rule);
+    background: var(--well);
+    border-radius: 0 7px 7px 0;
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    color: var(--ink-60);
+}
+
+.why[hidden] {
+    display: none;
+}
+
+.why.borderline {
+    border-left-color: var(--signal-missed);
+    color: var(--ink);
+}

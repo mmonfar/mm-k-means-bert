@@ -74,6 +74,7 @@
                 <dt>Where it ran</dt>
                 <dd id="m-model">—</dd>
             </dl>
+            <p class="caveat-body" id="m-qc"></p>
             <p class="caveat-body" id="m-note"></p>
             <p class="caveat-body" id="m-kwarn" hidden>
                 <b>You have changed the number of groups.</b> Which cases sit
@@ -232,6 +233,19 @@
                         <p class="case-summary" id="case-summary"></p>
                     </div>
                     <button type="button" class="link expand" id="case-more" hidden>Read full case</button>
+
+                    <!-- Clustering gets most cases into the right group and not
+                         all of them. This is where a clinician overrules it, and
+                         the correction is kept. -->
+                    <div class="filing" id="filing" hidden>
+                        <span class="filing-label">Filed as</span>
+                        <span class="filing-value" id="filed-as">—</span>
+                        <button type="button" class="link" id="file-case">change</button>
+                    </div>
+
+                    <!-- The grouping is a proposal, so it has to show its
+                         reasoning. A borderline case must look borderline. -->
+                    <p class="why" id="case-why" hidden></p>
 
                     <dl class="meta">
                         <dt>Dept</dt>
@@ -541,6 +555,20 @@
         document.getElementById('m-var').textContent =
             varPct == null ? 'n/a' : varPct + '% — ' + detailVerdict;
 
+        const qc = data.meta.qc || {};
+        if (qc.verdict) {
+            const na = qc.neighbour_agreement || {};
+            document.getElementById('m-qc').innerHTML =
+                '<b>Is this grouping real?</b> ' +
+                Math.round((na.agreement || 0) * 100) + '% of cases have their single ' +
+                'closest case in the same group; at random it would be ' +
+                Math.round((na.chance || 0) * 100) + '%. Groups keep ' +
+                Math.round(((qc.stability || {}).stability || 0) * 100) +
+                '% of their pairs together when the data is resampled. ' +
+                'Verdict: <b>' + qc.verdict + '</b> (' + qc.checks_passed + ' of 3 ' +
+                'checks passed).';
+        }
+
         document.getElementById('m-note').innerHTML =
             '<b>Is ' + (varPct == null ? 'that' : varPct + '%') + ' good?</b> For this kind ' +
             'of picture, yes — 10–25% is the usual range, because squashing writing down ' +
@@ -648,6 +676,15 @@
             // definition of the group. On this register the best available term
             // appears in under a third of its group, so the tooltip states the
             // reach of the name rather than letting it imply completeness.
+            // Whatever this says has to be true of the name sitting next to it.
+            // The first version inferred "no word is common enough" from
+            // label_coverage being falsy, which was wrong twice over: a group
+            // named from the house taxonomy has no coverage figure at all, and
+            // a payload built before coverage existed has no field — so a
+            // perfectly well-named group was told it had no name. The test is
+            // now what the label actually IS.
+            const numbered = /^Group \d+$/.test(c.label || '');
+
             if (c.label_source === 'human') {
                 bits.push('Named by a person, and stored — it will be reapplied to ' +
                     'this group in future runs.');
@@ -655,17 +692,25 @@
                 bits.push('Carried over from a name a person gave a very similar ' +
                     'group earlier (' + Math.round((c.label_similarity || 0) * 100) +
                     '% match). Rename it if that is no longer right.');
+            } else if (c.label_source === 'taxonomy') {
+                bits.push('Recognised from names people gave earlier: ' +
+                    Math.round((c.label_agreement || 0) * 100) + '% of these cases ' +
+                    'match that label. Rename it if it has drifted.');
             } else if (c.label_source === 'model') {
                 bits.push('Drafted by a small local language model from the cases in ' +
                     'this group. Check it against the typical case above, and rename ' +
                     'it if it is wrong.');
+            } else if (numbered) {
+                bits.push('No word is common enough across this group to name it, ' +
+                    'so it is numbered rather than given a label it has not earned. ' +
+                    'Rename it and the tool will remember.');
             } else if (c.label_coverage) {
                 bits.push('The words in this name appear in about ' +
                     Math.round(c.label_coverage * 100) + '% of its cases — ' +
                     'a hint, not a definition.');
             } else {
-                bits.push('No word is common enough across this group to name it, ' +
-                    'so it is numbered rather than given a label it has not earned.');
+                bits.push('Named from words this group uses more than the rest of ' +
+                    'the register.');
             }
             b.dataset.tip = bits.join(' ');
             b.innerHTML =
@@ -964,6 +1009,34 @@
             el.dept.textContent = p.department;
             el.sev.textContent = '●'.repeat(p.severity) + '○'.repeat(5 - p.severity);
 
+            if (p.why) {
+                caseWhy.hidden = false;
+                caseWhy.className = 'why' + (p.why.borderline ? ' borderline' : '');
+                caseWhy.textContent = (p.why.borderline ? 'Borderline. ' : 'Why here: ')
+                    + p.why.reason;
+            } else {
+                caseWhy.hidden = true;
+            }
+
+            // Where this case sits in the hospital's own taxonomy, and who put
+            // it there — a person, or the classifier guessing from past filings.
+            if (live) {
+                filing.hidden = false;
+                if (p.house) {
+                    filedAs.textContent = p.house;
+                    filedAs.className = 'filing-value ' +
+                        (p.house_source === 'human' ? 'by-hand' : 'by-machine');
+                    filedAs.title = p.house_source === 'human'
+                        ? 'Filed by a person'
+                        : 'Suggested from earlier filings (' +
+                          Math.round((p.house_confidence || 0) * 100) + '% match)';
+                } else {
+                    filedAs.textContent = 'not filed yet';
+                    filedAs.className = 'filing-value unfiled';
+                    filedAs.title = '';
+                }
+            }
+
             const t = geoTarget === 1;
             const cx = t ? (p.tx == null ? p.x : p.tx) : p.x;
             const cy = t ? (p.ty == null ? p.y : p.ty) : p.y;
@@ -997,6 +1070,40 @@
         geoOnChange = () => { if (pinned !== null) showCase(pinned); };
 
         document.getElementById('insp-close').addEventListener('click', clearCase);
+
+        const caseWhy = document.getElementById('case-why');
+        const filing = document.getElementById('filing');
+        const filedAs = document.getElementById('filed-as');
+
+        document.getElementById('file-case').addEventListener('click', async () => {
+            if (pinned === null) return;
+            const p = points[pinned];
+            const known = [...new Set(points.map(q => q.house).filter(Boolean))];
+            const hint = known.length
+                ? '\n\nAlready in use:\n  ' + known.join('\n  ')
+                : '';
+            const next = prompt('File ' + p.id + ' under which failure mode?' + hint,
+                p.house || '');
+            if (next === null) return;
+            const label = next.trim();
+            if (!label) return;
+
+            busyMain.textContent = 'Filing ' + p.id + ' under “' + label + '”…';
+            busy.hidden = false;
+            try {
+                const res = await fetch('/api/case', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ case: p.id, label })
+                });
+                const out = await res.json();
+                if (!res.ok) throw new Error(out.error || ('HTTP ' + res.status));
+                location.reload();
+            } catch (err) {
+                busy.hidden = true;
+                alert('Could not file that case: ' + (err.message || err));
+            }
+        });
 
         const caseMore = document.getElementById('case-more');
         caseMore.addEventListener('click', () => {

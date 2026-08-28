@@ -103,6 +103,39 @@ CREATE TABLE IF NOT EXISTS links (
     PRIMARY KEY (case_a, case_b)
 );
 
+-- Every run of the pipeline, with the quality checks it scored. Keyed by k, so
+-- "was 5 groups better than 6?" is a query rather than a memory.
+CREATE TABLE IF NOT EXISTS runs (
+    run_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT NOT NULL,
+    source      TEXT,
+    k           INTEGER NOT NULL,
+    n_cases     INTEGER NOT NULL,
+    silhouette  REAL,
+    shuffled    REAL,          -- the same pipeline on structure-free data
+    stability   REAL,          -- pairs that stay together under resampling
+    agreement   REAL,          -- nearest case in the same group
+    chance      REAL,          -- what that would be at random
+    verdict     TEXT
+);
+
+-- One row per case per run: where it went, and the numbers behind it. This is
+-- what makes a classification inspectable months later — the alternative is
+-- asking someone to trust a picture they cannot interrogate.
+CREATE TABLE IF NOT EXISTS assignments (
+    run_id      INTEGER NOT NULL,
+    case_key    TEXT NOT NULL,
+    cluster_id  INTEGER NOT NULL,
+    label       TEXT,
+    to_own      REAL,          -- similarity to its own group's centre
+    to_next     REAL,          -- similarity to the closest other group
+    margin      REAL,
+    neighbours  INTEGER,       -- how many of its 3 closest cases agree
+    borderline  INTEGER,
+    reason      TEXT,
+    PRIMARY KEY (run_id, case_key)
+);
+
 -- Append-only. Governance work has to be auditable: who changed what, when.
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -350,6 +383,19 @@ def learn(conn, label: str, vectors, author: str | None = None) -> int:
     return count
 
 
+def filed_cases(conn) -> dict[str, str]:
+    """Every case a person has filed by hand, keyed by case hash.
+
+    These are not predictions and are never overridden by one. Clustering is a
+    way of finding candidates; when a clinician says where a case belongs, that
+    is simply where it belongs.
+    """
+    return {r["case_key"]: r["label"]
+            for r in conn.execute(
+                "SELECT case_key, label FROM case_labels"
+                " ORDER BY created_at").fetchall()}
+
+
 def taxonomy(conn) -> dict[str, int]:
     """Every learned label and how many cases stand behind it."""
     return {r["label"]: r["n"]
@@ -429,6 +475,92 @@ def evaluate(conn, vectors, truth: list[str]) -> dict:
     }
 
 
+def record_run(conn, *, source, k, n_cases, qc, keys, clusters, labels,
+               justification) -> int:
+    """Store one run: its quality scores, and the reason for every assignment.
+
+    Case text is not stored — only the hash — so this remains a record of
+    decisions rather than a second copy of the register.
+    """
+    agreement = qc.get("neighbour_agreement", {})
+    versus = qc.get("versus_shuffled", {})
+    stab = qc.get("stability", {})
+
+    cur = conn.execute(
+        "INSERT INTO runs (created_at, source, k, n_cases, silhouette, shuffled,"
+        " stability, agreement, chance, verdict) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (_now(), source, k, n_cases,
+         versus.get("silhouette"), versus.get("shuffled_silhouette"),
+         stab.get("stability"), agreement.get("agreement"),
+         agreement.get("chance"), qc.get("verdict")),
+    )
+    run_id = cur.lastrowid
+
+    label_of = {c["id"]: c["label"] for c in clusters}
+    conn.executemany(
+        "INSERT OR REPLACE INTO assignments (run_id, case_key, cluster_id, label,"
+        " to_own, to_next, margin, neighbours, borderline, reason)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [
+            (run_id, key, int(cid), label_of.get(int(cid)),
+             j["to_own"], j["to_next"], j["margin"], j["neighbours_agreeing"],
+             int(j["borderline"]), j["reason"])
+            for key, cid, j in zip(keys, labels, justification)
+        ],
+    )
+    conn.commit()
+    log(conn, "run", {"run_id": run_id, "k": k, "verdict": qc.get("verdict")})
+    return run_id
+
+
+def run_history(conn, limit: int = 20) -> list[dict]:
+    """Past runs, newest first — so different k can be compared on evidence."""
+    return [dict(r) for r in conn.execute(
+        "SELECT run_id, created_at, k, n_cases, silhouette, shuffled, stability,"
+        " agreement, chance, verdict FROM runs ORDER BY run_id DESC LIMIT ?",
+        (limit,)).fetchall()]
+
+
+def best_k(conn, min_runs: int = 2) -> dict | None:
+    """Which number of groups has held up best across the runs recorded.
+
+    Ranked on stability first and neighbour agreement second, because those are
+    the two that say whether a partition is real. Returns None until there is
+    enough history to make the comparison worth anything.
+    """
+    rows = conn.execute(
+        "SELECT k, COUNT(*) AS runs, AVG(stability) AS stability,"
+        " AVG(agreement) AS agreement, AVG(chance) AS chance"
+        " FROM runs WHERE stability IS NOT NULL GROUP BY k").fetchall()
+    if len(rows) < min_runs:
+        return None
+    ranked = sorted(rows, key=lambda r: (r["stability"] or 0, r["agreement"] or 0),
+                    reverse=True)
+    top = ranked[0]
+    return {
+        "k": top["k"],
+        "runs": top["runs"],
+        "stability": round(top["stability"], 4),
+        "agreement": round(top["agreement"], 4),
+        "compared": [dict(r) for r in ranked],
+    }
+
+
+def case_history(conn, summary_text: str) -> list[dict]:
+    """Everywhere one case has been put, and the reason each time.
+
+    The answer to "why is this here?" and to "did it move when we changed the
+    number of groups?" — both of which are fair questions to ask of a tool that
+    sorts clinical incidents.
+    """
+    key = case_key(summary_text)
+    return [dict(r) for r in conn.execute(
+        "SELECT a.run_id, r.k, r.created_at, a.cluster_id, a.label, a.to_own,"
+        " a.to_next, a.margin, a.neighbours, a.borderline, a.reason"
+        " FROM assignments a JOIN runs r ON r.run_id = a.run_id"
+        " WHERE a.case_key = ? ORDER BY a.run_id DESC", (key,)).fetchall()]
+
+
 def summary(conn) -> dict:
     """One-line state of the store, for the interface and the CLI."""
     def count(table: str) -> int:
@@ -436,6 +568,7 @@ def summary(conn) -> dict:
 
     learned = taxonomy(conn)
     return {
+        "runs": count("runs"),
         "named_groups": count("group_names"),
         "labelled_cases": count("case_labels"),
         "links": count("links"),

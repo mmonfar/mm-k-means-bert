@@ -322,6 +322,54 @@ time, and teaches the taxonomy — which then does the work for free, at 78%, on
 every register after that. The flag stays in the repo because it was measured
 rather than assumed, and the measurement is the useful part.
 
+### Is the grouping real, or is it random?
+
+A fair question to ask of anything that sorts clinical incidents, and it is
+answered on every run with numbers rather than reassurance. Three checks, none
+needing a right answer to compare against:
+
+| Check | What it asks | On the demo register (k=5) |
+|---|---|---|
+| **Neighbour agreement** | is a case's single most similar case in the same group? | **70%**, against **21%** at chance — 3.3× better |
+| **Stability** | do grouped cases stay together when the data is resampled? | 57% of pairs |
+| **Versus shuffled** | does it beat the same pipeline on structure-free data? | 0.124 vs 0.098 — not clearly |
+
+**Verdict on the demo data: 1 of 3 — "weak; treat the grouping as a prompt, not
+a finding."** That is printed on every run and shown under Method in the app.
+
+So: not random — the neighbour test clears chance by more than three times — but
+the exact boundaries are genuinely unstable, which is why perhaps a third of
+cases sit somewhere a clinician would not have put them. The map is a good way
+to find candidates and a poor way to settle anything. Everything below exists
+because of that.
+
+**Every case says why it is where it is.** Open a case and the inspector shows
+its distance to its own group, the margin to the next one, and how many of its
+three closest cases agree — with a plain sentence:
+
+> *"none of its three closest cases are in this group — placed on overall
+> similarity (0.62), worth a look"*
+
+A case that sits between two groups is flagged **borderline** rather than
+presented as settled.
+
+**Every run is recorded.** `feedback.db` keeps a `runs` table (k, the three
+quality scores, the verdict) and an `assignments` table with one row per case
+per run — where it went and the reason. So "which number of groups works best
+here?" is a query, not an opinion:
+
+```python
+import feedback
+conn = feedback.connect()
+feedback.run_history(conn)     # every run, newest first
+feedback.best_k(conn)          # the k that has held up best
+feedback.case_history(conn, summary_text)   # everywhere one case has been put
+```
+
+On the demo register that already answers the question: **k=5** (70% agreement,
+57% stability) beats k=6 (57%, 47%). Case text is never stored — only hashes —
+so this stays a record of decisions.
+
 ### The refinement loop — how it gets better with use
 
 This is the part that improves. It is also, deliberately, the cheapest part:

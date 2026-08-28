@@ -234,13 +234,23 @@ class Handler(SimpleHTTPRequestHandler):
         centroid, so it survives into next quarter's export even though cluster
         ids will not.
         """
-        if self.path.split("?")[0] != "/api/name":
+        route = self.path.split("?")[0]
+        if route not in ("/api/name", "/api/case"):
             self._json(404, {"error": "no such endpoint"})
             return
 
         try:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError) as exc:
+            self._json(400, {"error": f"bad request: {exc}"})
+            return
+
+        if route == "/api/case":
+            self._file_case(body)
+            return
+
+        try:
             cluster_id = int(body["cluster"])
             name = str(body["name"]).strip()
         except (ValueError, KeyError, TypeError) as exc:
@@ -317,6 +327,56 @@ class Handler(SimpleHTTPRequestHandler):
             _pipeline_lock.release()
 
         self._json(200, {"ok": True, "fingerprint": fp, "store": state})
+
+    def _file_case(self, body: dict) -> None:
+        """File one case under a label, by hand.
+
+        The counterpart to renaming a group. Clustering gets roughly two thirds
+        of cases into the group a clinician would choose; this is how the other
+        third gets corrected, and every correction also teaches the taxonomy, so
+        the same mistake is less likely next quarter.
+        """
+        case_id = str(body.get("case", "")).strip()
+        name = str(body.get("label", "")).strip()
+        if not case_id or not 1 <= len(name) <= 60:
+            self._json(400, {"error": "need a case id and a 1-60 character label"})
+            return
+
+        payload_path = APP_DIR / "data.json"
+        if not payload_path.exists():
+            self._json(400, {"error": "no galaxy built yet"})
+            return
+
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        point = next((p for p in payload["points"] if p["id"] == case_id), None)
+        if point is None:
+            self._json(404, {"error": f"no case {case_id}"})
+            return
+
+        import feedback
+
+        author = self.headers.get("X-Author") or None
+        conn = feedback.connect()
+        try:
+            feedback.label_case(conn, point["summary"], name, author=author)
+            total = feedback.learn(
+                conn, name, engine.embed([point["summary"]]), author=author)
+            state = feedback.summary(conn)
+        finally:
+            conn.close()
+
+        print(f"[mmonfar.] {case_id} filed under {name!r} "
+              f"({total} cases now under that label)")
+
+        if not _pipeline_lock.acquire(blocking=False):
+            self._json(409, {"error": "a rebuild is already running"})
+            return
+        try:
+            engine.run(self._current_input(), k=payload["meta"]["n_clusters"])
+        finally:
+            _pipeline_lock.release()
+
+        self._json(200, {"ok": True, "label": name, "store": state})
 
     def do_DELETE(self) -> None:  # noqa: N802
         """Restore the shipped demo dataset and forget the uploaded register."""
