@@ -308,6 +308,112 @@ def test_the_verdict_is_honest_about_weak_structure():
     assert "weak" in report["verdict"]
 
 
+# ---------------------------------------------------------------- constraints (must-/cannot-link)
+
+def test_no_recorded_links_leaves_clustering_unchanged(store):
+    """The regression that matters most: a feedback store existing (even one
+    that has been opened, just with no links in it) must not change a single
+    label versus the no-store path that shipped before links existed."""
+    feedback, conn = store
+    matrix, _ = _three_blobs(seed=7)
+    texts = [f"case {i}" for i in range(len(matrix))]
+
+    no_store_labels, no_store_score, no_store_report = engine.cluster(matrix, k=3, seed=42)
+    with_store_labels, with_store_score, with_store_report = engine.cluster(
+        matrix, k=3, seed=42, texts=texts)
+
+    assert np.array_equal(no_store_labels, with_store_labels)
+    assert no_store_score == with_store_score
+    assert no_store_report is None and with_store_report is None
+
+
+def test_a_must_link_pair_lands_in_the_same_group(store):
+    feedback, conn = store
+    matrix, natural = _three_blobs(seed=11)
+    texts = [f"case {i}" for i in range(len(matrix))]
+    a, b = 0, 31   # different natural blobs, so KMeans alone would split them
+    assert natural[a] != natural[b]
+    feedback.link_cases(conn, texts[a], texts[b], "same")
+
+    labels, score, report = engine.cluster(matrix, k=3, seed=42, texts=texts)
+    assert labels[a] == labels[b]
+    assert report["must_link"] == {"recorded": 1, "honoured": 1}
+
+
+def test_a_cannot_link_pair_is_split_apart(store):
+    feedback, conn = store
+    matrix, natural = _three_blobs(seed=11)
+    texts = [f"case {i}" for i in range(len(matrix))]
+    a, b = 0, 1   # same natural blob, so KMeans alone would keep them together
+    assert natural[a] == natural[b]
+    feedback.link_cases(conn, texts[a], texts[b], "different")
+
+    labels, score, report = engine.cluster(matrix, k=3, seed=42, texts=texts)
+    assert labels[a] != labels[b]
+    assert report["cannot_link"]["honoured"] == 1
+    assert report["cannot_link"]["violated"] == 0
+
+
+def test_unsatisfiable_constraints_are_reported_not_crashed(store):
+    """A must-link chain that also carries a cannot-link edge inside it cannot
+    be satisfied by any k-way partition. The pipeline must not crash, and must
+    say so rather than silently keeping or silently dropping the promise."""
+    feedback, conn = store
+    matrix, _ = _three_blobs(seed=11)
+    texts = [f"case {i}" for i in range(len(matrix))]
+    a, b, c = 0, 1, 2
+    feedback.link_cases(conn, texts[a], texts[b], "same")
+    feedback.link_cases(conn, texts[b], texts[c], "same")
+    feedback.link_cases(conn, texts[a], texts[c], "different")  # contradicts the chain above
+
+    labels, score, report = engine.cluster(matrix, k=3, seed=42, texts=texts)
+    assert labels[a] == labels[b] == labels[c], "the must-link chain wins the contradiction"
+    assert report["cannot_link"]["contradictory"] == 1
+    cl = report["cannot_link"]
+    assert cl["honoured"] + cl["violated"] + cl["contradictory"] == cl["recorded"]
+
+
+def test_a_cannot_link_clique_bigger_than_k_degrades_without_crashing(store):
+    """Three cases pairwise cannot-linked cannot all be kept apart across only
+    two groups (pigeonhole) — the run must still finish, in a fixed number of
+    groups, and say at least one pair of the recorded judgements lost out."""
+    feedback, conn = store
+    matrix, _ = _three_blobs(seed=11)
+    texts = [f"case {i}" for i in range(len(matrix))]
+    a, b, c = 0, 1, 2
+    feedback.link_cases(conn, texts[a], texts[b], "different")
+    feedback.link_cases(conn, texts[a], texts[c], "different")
+    feedback.link_cases(conn, texts[b], texts[c], "different")
+
+    labels, score, report = engine.cluster(matrix, k=2, seed=42, texts=texts)
+    assert report["cannot_link"]["violated"] >= 1
+    assert len(set(labels.tolist())) <= 2
+
+
+def test_a_carried_name_below_the_material_drift_threshold_is_flagged(store):
+    """Both groups pass CARRY_OVER_MIN (0.92) and are carried over, but only
+    the one below DRIFT_MATERIAL_MAX (0.96) — where the shipped-corpus
+    measurement shows membership typically less than half preserved — is
+    flagged as material drift."""
+    feedback, conn = store
+    feedback.save_name(conn, ["orig-a-1", "orig-a-2"], "Alpha", [1.0, 0.0, 0.0])
+    feedback.save_name(conn, ["orig-b-1", "orig-b-2"], "Beta", [0.0, 1.0, 0.0])
+
+    texts = [f"case {i}" for i in range(4)]
+    labels = np.array([0, 0, 1, 1])
+    below = [0.95, (1 - 0.95 ** 2) ** 0.5, 0.0]  # cos sim to Alpha == 0.95 < 0.96
+    above = [(1 - 0.97 ** 2) ** 0.5, 0.97, 0.0]  # cos sim to Beta  == 0.97 >= 0.96
+    matrix = np.array([below, below, above, above])
+
+    clusters = [{"id": 0, "label": "x"}, {"id": 1, "label": "y"}]
+    engine.apply_human_names(clusters, texts, labels, matrix)
+
+    alpha = next(c for c in clusters if c["label"] == "Alpha")
+    beta = next(c for c in clusters if c["label"] == "Beta")
+    assert alpha["label_match"] == "carried_over" and alpha["label_drift"] is True
+    assert beta["label_match"] == "carried_over" and beta["label_drift"] is False
+
+
 # ---------------------------------------------------------------- the run log
 
 def test_a_run_is_recorded_with_a_reason_for_every_case(store):
@@ -365,6 +471,27 @@ def test_best_k_is_decided_on_recorded_evidence(store):
     conn.commit()
 
     assert feedback.best_k(conn)["k"] == 5
+
+
+def test_engine_recorded_best_k_reads_the_run_log(store, monkeypatch):
+    """engine.recorded_best_k is the bridge feeding the Method panel: it must
+    read the same evidence feedback.best_k does, and say None with too little
+    of it rather than guess."""
+    feedback, conn = store
+
+    assert engine.recorded_best_k() is None, "no runs yet — must not invent a k"
+
+    for k, stab, agree in [(5, 0.72, 0.70), (6, 0.44, 0.57), (5, 0.70, 0.69)]:
+        conn.execute(
+            "INSERT INTO runs (created_at, source, k, n_cases, silhouette,"
+            " shuffled, stability, agreement, chance, verdict)"
+            " VALUES (datetime('now'),?,?,?,?,?,?,?,?,?)",
+            ("s.xlsx", k, 100, 0.12, 0.09, stab, agree, 0.2, "x"))
+    conn.commit()
+
+    got = engine.recorded_best_k()
+    assert got["k"] == 5
+    assert got["runs"] == 2
 
 
 def test_case_history_shows_where_a_case_has_been(store):
@@ -668,7 +795,8 @@ def test_payload_shape_and_bounds():
             "cluster", "department", "severity", "date", "summary", "nearest",
             # What the hospital's own taxonomy makes of this case; null until it
             # has been taught enough to have an opinion.
-            "house", "house_confidence", "house_source",
+            "house", "house_confidence", "house_margin", "house_candidate",
+            "house_withheld", "house_source",
             # Why this case sits in this group — no assignment is unexplained.
             "why",
         }
@@ -704,6 +832,30 @@ def test_payload_carries_both_geometries():
         if abs(p["x"] - p["tx"]) > 1e-6 or abs(p["y"] - p["ty"]) > 1e-6
     ]
     assert moved, "amplified and true geometries are identical — nothing to disclose"
+
+
+def test_payload_carries_best_k_or_none():
+    """The Method panel reads meta.best_k straight off the payload; it must
+    default to None (not enough history) and round-trip a real value."""
+    df = data_generator.build_frame(rows=100, seed=42).drop(columns=["_ground_truth"])
+    rng = np.random.default_rng(7)
+    labels = rng.integers(0, 5, len(df))
+    coords = engine.rescale(rng.normal(0, 1, (len(df), 3)))
+    clusters = engine.name_clusters(df["Case_Summary"].tolist(), labels, 5)
+
+    default = engine.build_payload(
+        df, coords, labels, clusters,
+        projection="pca", silhouette=0.1, separation=1.0, source="test.xlsx",
+    )
+    assert default["meta"]["best_k"] is None
+
+    carried = engine.build_payload(
+        df, coords, labels, clusters,
+        projection="pca", silhouette=0.1, separation=1.0, source="test.xlsx",
+        best_k={"k": 5, "runs": 3, "stability": 0.72, "agreement": 0.70, "compared": []},
+    )
+    assert carried["meta"]["best_k"]["k"] == 5
+    assert json.loads(json.dumps(carried))["meta"]["best_k"]["k"] == 5
 
 
 def test_nearest_neighbours_are_measured_and_ranked():
@@ -919,6 +1071,193 @@ def test_the_app_actually_boots_with_no_javascript_errors(tmp_path):
         httpd.server_close()
 
 
+# ---------------------------------------------------------------- Method panel (slow)
+
+def _payload_for_method_panel(best_k=None, stability=0.57):
+    """A payload shaped like a real one, but with a QC block we control — so the
+    UI wording can be pinned without waiting on a model run or a run history."""
+    df = data_generator.build_frame(rows=100, seed=42).drop(columns=["_ground_truth"])
+    rng = np.random.default_rng(9)
+    labels = rng.integers(0, 5, len(df))
+    coords = engine.rescale(rng.normal(0, 1, (len(df), 3)))
+    clusters = engine.name_clusters(df["Case_Summary"].tolist(), labels, 5)
+    qc = {
+        "neighbour_agreement": {"agreement": 0.70, "chance": 0.21, "lift": 3.3},
+        "stability": {"stability": stability, "rounds": 8},
+        "versus_shuffled": {"beats_noise": False},
+        "checks_passed": 1,
+        "verdict": "weak — treat the grouping as a prompt, not a finding",
+    }
+    return engine.build_payload(
+        df, coords, labels, clusters,
+        projection="pca", silhouette=0.1, separation=1.0, source="test.xlsx",
+        qc=qc, best_k=best_k,
+    )
+
+
+def _read_from_a_served_page(tmp_path, payload, *element_ids):
+    """Serve a real copy of app/ with a crafted data.json and read back the
+    text the render script put into the given elements. Same boot pattern as
+    the JavaScript-errors test, because node --check does not execute the
+    module and cannot catch a wiring mistake in what it renders."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3000)
+            out = [page.evaluate(f"document.getElementById('{eid}').textContent")
+                   for eid in element_ids]
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+    return out
+
+
+@pytest.mark.slow
+def test_method_panel_says_theres_not_enough_run_history_when_best_k_is_none(tmp_path):
+    """feedback.best_k returns None below its evidence threshold; the panel
+    must say so plainly rather than showing a fabricated k."""
+    payload = _payload_for_method_panel(best_k=None)
+    (text,) = _read_from_a_served_page(tmp_path, payload, "m-bestk")
+    assert "not enough run history" in text.lower()
+    assert "k=" not in text.lower()
+
+
+@pytest.mark.slow
+def test_method_panel_surfaces_the_best_performing_k_from_the_run_log(tmp_path):
+    payload = _payload_for_method_panel(best_k={
+        "k": 5, "runs": 3, "stability": 0.72, "agreement": 0.70, "compared": [],
+    })
+    (text,) = _read_from_a_served_page(tmp_path, payload, "m-bestk")
+    assert "k=5" in text
+    assert "72%" in text
+
+
+@pytest.mark.slow
+def test_method_panel_states_plainly_that_the_stability_bar_is_not_met(tmp_path):
+    """Pins the measured position from docs/sdd.md: 0.57 against a 0.60 bar. The
+    value is read out of the payload's QC block, not hardcoded in the page, so
+    this fails first if quality.py's bar or the measured figure moves without
+    the wording being revisited."""
+    payload = _payload_for_method_panel(stability=0.57)
+    (text,) = _read_from_a_served_page(tmp_path, payload, "m-qc")
+    assert "57%" in text
+    assert "below the 60% bar" in text.lower()
+    assert "not yet reached" in text.lower()
+
+
+@pytest.mark.slow
+def test_method_panel_states_plainly_when_the_stability_bar_is_met(tmp_path):
+    payload = _payload_for_method_panel(stability=0.63)
+    (text,) = _read_from_a_served_page(tmp_path, payload, "m-qc")
+    assert "63%" in text
+    assert "below the 60% bar" not in text.lower()
+
+
+@pytest.mark.slow
+def test_method_panel_value_column_is_wide_enough_not_to_break_words(tmp_path):
+    """Regression for a defect that shipped and passed every text-content
+    test: a two-pairs-per-row grid let the longest label ("Best-performing
+    group count") claim most of the panel's width, leaving each value column
+    around 90px — narrow enough that overflow-wrap: break-word split
+    ordinary words like "automatically" mid-syllable. Text-content
+    assertions never caught it because the WORDS were still all there, just
+    broken across lines. This measures actual rendered geometry instead:
+    the value column must be wide enough that a normal word never needs to
+    break, and the panel must not need to scroll to show it."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    payload = _payload_for_method_panel(best_k={
+        "k": 5, "runs": 6, "stability": 0.57, "agreement": 0.78, "compared": [],
+    }, stability=0.57)
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3000)
+            page.click("#method-btn")
+            page.wait_for_timeout(300)
+
+            m = page.evaluate("""
+            () => {
+                const pop = document.getElementById('method-pop');
+                const dl = document.querySelector('dl.method');
+                const dds = [...dl.querySelectorAll('dd')].map(dd => {
+                    const r = dd.getBoundingClientRect();
+                    return { width: r.width, text: dd.textContent.trim() };
+                });
+                return {
+                    dds,
+                    scrollHeight: pop.scrollHeight,
+                    clientHeight: pop.clientHeight,
+                };
+            }
+            """)
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    # "Groups found" must read "5 (found automatically, not pre-set)" on a
+    # payload at the default k — the exact phrase the owner saw torn apart.
+    found = [d for d in m["dds"] if "automatically" in d["text"]]
+    assert found, "expected the 'found automatically' phrasing in this fixture"
+    for d in m["dds"]:
+        # 90px (the measured width that broke "automatically") is well
+        # inside this bar; a healthy single-column layout clears 200px+ at
+        # this viewport.
+        assert d["width"] >= 200, (
+            f"value column too narrow ({d['width']:.0f}px) for {d['text']!r} — "
+            "a normal word will not fit and overflow-wrap: break-word will "
+            "split it mid-word"
+        )
+    assert m["scrollHeight"] <= m["clientHeight"] + 1, (
+        "the core quality information must not need to scroll"
+    )
+
+
 # ---------------------------------------------------------------- semantics (slow)
 
 @pytest.mark.slow
@@ -935,6 +1274,434 @@ def test_embeddings_bind_lexically_divergent_synonyms():
     v = engine.embed(texts)
     sim = v @ v.T  # vectors are L2-normalised, so this is cosine similarity
     assert sim[0, 1] > sim[0, 2]
+
+
+@pytest.mark.slow
+def test_bulk_filing_files_every_visible_case_under_one_label(tmp_path, monkeypatch):
+    """/api/cases must file every case handed to it exactly the way `_file_case`
+    files one — feedback.label_case + feedback.learn — in a single round trip,
+    refuse an empty selection, and be immune to being overruled by the taxonomy
+    on the next run, same as a hand-filed case."""
+    pytest.importorskip("sentence_transformers")
+
+    import http.server
+    import socket
+    import threading
+    import urllib.error
+    import urllib.request
+    from functools import partial
+
+    import feedback
+    import serve
+
+    df = data_generator.build_frame(rows=20, seed=3).drop(columns=["_ground_truth"])
+    input_path = tmp_path / "register.xlsx"
+    df.to_excel(input_path, index=False)
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    monkeypatch.setattr(serve, "APP_DIR", app_dir)
+    monkeypatch.setattr(serve, "UPLOAD_DIR", tmp_path / "no-uploads")
+    monkeypatch.setattr(engine, "APP_DIR", app_dir)
+    monkeypatch.setattr(engine, "ROOT", tmp_path)
+    monkeypatch.setattr(engine, "DEFAULT_INPUT", input_path)
+    monkeypatch.setattr(feedback, "DB_PATH", tmp_path / "feedback.db")
+
+    payload = engine.run(input_path, k=4)
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), serve.Handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def patch(body):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/cases", method="PATCH",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"})
+        return urllib.request.urlopen(req)
+
+    try:
+        try:
+            patch({"cases": [], "label": "Something"})
+            assert False, "an empty selection must be refused"
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 400
+
+        ids = [p["id"] for p in payload["points"][:5]]
+        with patch({"cases": ids, "label": "Bulk filed group"}) as res:
+            out = json.loads(res.read())
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    assert out["ok"] is True
+    assert out["filed"] == 5
+
+    conn = feedback.connect()
+    try:
+        filed = feedback.filed_cases(conn)
+    finally:
+        conn.close()
+    summaries = {p["id"]: p["summary"] for p in payload["points"]}
+    for case_id in ids:
+        assert filed[feedback.case_key(summaries[case_id])] == "Bulk filed group"
+
+
+# ---------------------------------------------------------- confidence level UI (slow)
+
+def _payload_for_confidence_ui(rows=6):
+    """A small payload with two house predictions rigged to sit either side of
+    the 'preparing' bar: case 0 clears 'exploring' (0.10/0.00) but not
+    'preparing' (0.25/0.02), so it is a guess only at the loosest setting;
+    case 1 clears every level, so it is a confident label everywhere. The
+    remaining cases carry no prediction at all — the taxonomy declining to
+    have an opinion is the normal case, not the exception."""
+    df = data_generator.build_frame(rows=rows, seed=11).drop(columns=["_ground_truth"])
+    rng = np.random.default_rng(4)
+    labels = rng.integers(0, 2, len(df))
+    coords = engine.rescale(rng.normal(0, 1, (len(df), 3)))
+    clusters = engine.name_clusters(df["Case_Summary"].tolist(), labels, 2)
+    blank = {"label": None, "confidence": None, "margin": None,
+             "candidate_label": None, "withheld_at_default": None}
+    house = [
+        {"label": None, "confidence": 0.15, "margin": 0.01,
+         "candidate_label": "Comm breakdown", "withheld_at_default": True,
+         "source": "taxonomy"},
+        {"label": "Confident label", "confidence": 0.5, "margin": 0.1,
+         "candidate_label": "Confident label", "withheld_at_default": False,
+         "source": "taxonomy"},
+    ] + [dict(blank) for _ in range(rows - 2)]
+    return engine.build_payload(
+        df, coords, labels, clusters,
+        projection="pca", silhouette=0.1, separation=1.0, source="test.xlsx",
+        house=house,
+    )
+
+
+@pytest.mark.slow
+def test_confidence_preset_renders_in_the_rail_with_plain_english_text(tmp_path):
+    """Moved out of Settings, where the owner 'knew it was there and took a
+    while to understand' it, into the Failure galaxies rail section — and the
+    consequence of whatever is selected must be readable without hovering."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    import feedback
+
+    payload = _payload_for_confidence_ui()
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3000)
+
+            in_rail = page.evaluate(
+                "!!document.getElementById('conf-seg').closest('.rail')")
+            assert in_rail, "the confidence control must live in the rail, not Settings"
+
+            default_blurb = page.evaluate(
+                "document.getElementById('conf-blurb').textContent")
+            assert default_blurb.strip() == feedback.CONFIDENCE_LEVELS["preparing"]["blurb"]
+
+            page.click('[data-level="exploring"]')
+            exploring_blurb = page.evaluate(
+                "document.getElementById('conf-blurb').textContent")
+            assert exploring_blurb.strip() == feedback.CONFIDENCE_LEVELS["exploring"]["blurb"]
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+@pytest.mark.slow
+def test_confidence_presets_never_split_two_and_one_across_rows(tmp_path):
+    """Regression: flex-wrap with a 30%-basis let 'Acting on it' (the longest
+    label) drop onto its own second row while 'Exploring' and 'Preparing'
+    stayed on the first — reported live on the running app at 800px wide,
+    reproducing at 1440px too. All three must always share one row of
+    buttons (a long label may wrap onto a second LINE inside its own
+    button), checked at both widths the report named plus the narrowest the
+    rail itself ever reaches."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    payload = _payload_for_confidence_ui()
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            for width in (800, 1000, 1440):
+                page = browser.new_page(viewport={"width": width, "height": 900})
+                page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+                page.wait_for_timeout(2500)
+                rows = page.evaluate("""
+                () => {
+                    const btns = [...document.querySelectorAll('#conf-seg .seg-btn')];
+                    return new Set(btns.map(b => Math.round(b.getBoundingClientRect().top))).size;
+                }
+                """)
+                page.close()
+                assert rows == 1, (
+                    f"the three presets split across {rows} rows at {width}px wide"
+                )
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+@pytest.mark.slow
+def test_a_guess_is_marked_distinctly_from_a_confident_label(tmp_path):
+    """At 'exploring' both cases in _payload_for_confidence_ui show a label,
+    but only case 0 is below the recorded ('preparing') standard — it must
+    read as a guess, visually and verbally, never like case 1's confident
+    label. Filing (house_source == 'human') is untouched by the level, which
+    is exercised elsewhere; this pins the guess/confident split."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    payload = _payload_for_confidence_ui()
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3000)
+
+            page.click('[data-level="exploring"]')
+
+            page.evaluate("window.__mmPin(0)")
+            guess_class = page.evaluate("document.getElementById('filed-as').className")
+            guess_text = page.evaluate("document.getElementById('filed-as').textContent")
+            assert "by-guess" in guess_class
+            assert "guess" in guess_text.lower()
+
+            page.evaluate("window.__mmPin(1)")
+            confident_class = page.evaluate("document.getElementById('filed-as').className")
+            assert "by-guess" not in confident_class
+            assert "by-machine" in confident_class
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+@pytest.mark.slow
+def test_confidence_level_persists_and_never_reaches_the_stored_record(tmp_path):
+    """localStorage must remember the chosen level across a reload, render
+    correctly when it is absent, and the level itself must never travel in a
+    request body — it is presentation-time only, exactly as the comment
+    above CONF_LEVELS in app/index.html says."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    payload = _payload_for_confidence_ui()
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3000)
+
+            page.click('[data-level="acting_on_it"]')
+            stored = page.evaluate(
+                "localStorage.getItem('mm-confidence-level')")
+            assert stored == "acting_on_it"
+
+            page.reload(wait_until="networkidle")
+            page.wait_for_timeout(3000)
+            still_on = page.evaluate(
+                "document.querySelector('[data-level=\"acting_on_it\"]')"
+                ".classList.contains('is-on')")
+            assert still_on, "the chosen level must survive a reload"
+
+            requests = []
+            page.on("request", lambda r: requests.append(r))
+            page.evaluate("window.__mmPin(1)")
+            page.click("#file-case")
+            page.click(".filing-opt")
+            page.click("#filing-modal-confirm")
+            page.wait_for_timeout(300)
+
+            bodies = [r.post_data for r in requests if r.url.endswith("/api/case")]
+            assert bodies, "filing must still send a request even though the API 404s here"
+            for body in bodies:
+                assert "level" not in body and "confidence" not in body, (
+                    "the confidence level must never enter the request body: " + body
+                )
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+# ---------------------------------------------------------------- filing modal (slow)
+
+@pytest.mark.slow
+def test_filing_modal_offers_existing_labels_and_files_the_visible_set(tmp_path):
+    """Replaces the bare window.prompt the owner flagged: 'I don't really get
+    the pop up window message... what are my options'. The modal must show
+    existing labels as clickable choices and state the count of cases in
+    scope, and confirming must file exactly the visible set under the chosen
+    label — the same request /api/cases always expected."""
+    pytest.importorskip("playwright.sync_api")
+    from playwright.sync_api import sync_playwright
+
+    import http.server
+    import shutil
+    import socket
+    import threading
+    from functools import partial
+
+    rows = 6
+    df = data_generator.build_frame(rows=rows, seed=5).drop(columns=["_ground_truth"])
+    rng = np.random.default_rng(2)
+    labels = rng.integers(0, 2, len(df))
+    coords = engine.rescale(rng.normal(0, 1, (len(df), 3)))
+    clusters = engine.name_clusters(df["Case_Summary"].tolist(), labels, 2)
+    blank = {"label": None, "confidence": None, "margin": None,
+             "candidate_label": None, "withheld_at_default": None}
+    house = [
+        {"label": "Existing label", "confidence": 1.0, "margin": None,
+         "candidate_label": "Existing label", "withheld_at_default": False,
+         "source": "human"},
+    ] + [dict(blank) for _ in range(rows - 1)]
+    payload = engine.build_payload(
+        df, coords, labels, clusters,
+        projection="pca", silhouette=0.1, separation=1.0, source="test.xlsx",
+        house=house,
+    )
+
+    app_dir = tmp_path / "app"
+    shutil.copytree(ROOT / "app", app_dir, ignore=shutil.ignore_patterns("data.json"))
+    (app_dir / "data.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(app_dir))
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.RequestHandlerClass.log_message = lambda *a, **k: None
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/index.html", wait_until="networkidle")
+            page.wait_for_timeout(3000)
+
+            page.click("#bulk-file")
+            page.wait_for_timeout(200)
+            assert page.evaluate("document.getElementById('filing-modal').hidden") is False
+
+            scope = page.evaluate(
+                "document.getElementById('filing-modal-scope').textContent")
+            assert str(rows) in scope
+
+            options = page.evaluate(
+                "[...document.querySelectorAll('.filing-opt')].map(b => b.textContent)")
+            assert "Existing label" in options
+
+            assert page.evaluate(
+                "document.getElementById('filing-modal-confirm').disabled") is True
+
+            requests = []
+            page.on("request", lambda r: requests.append(r))
+            page.click('.filing-opt >> text="Existing label"')
+            assert page.evaluate(
+                "document.getElementById('filing-modal-confirm').disabled") is False
+            page.click("#filing-modal-confirm")
+            page.wait_for_timeout(300)
+
+            calls = [r for r in requests if r.url.endswith("/api/cases")]
+            assert calls, "confirming must PATCH /api/cases"
+            body = json.loads(calls[0].post_data)
+            assert body["label"] == "Existing label"
+            assert len(body["cases"]) == rows
+
+            # Cancel must back out without filing anything.
+            page.click("#bulk-file")
+            page.wait_for_timeout(200)
+            requests.clear()
+            page.click("#filing-modal-cancel")
+            page.wait_for_timeout(200)
+            assert page.evaluate("document.getElementById('filing-modal').hidden") is True
+            assert not [r for r in requests if r.url.endswith("/api/cases")]
+            browser.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
 
 
 @pytest.mark.slow
@@ -959,7 +1726,7 @@ def test_the_headline_claim_is_scoped_to_the_default_grouping():
                "warfarin dose miscalculated"]
 
     def groups_at(k):
-        labels, _ = engine.cluster(matrix, k=k)
+        labels, _, _ = engine.cluster(matrix, k=k)
         return {p: int(labels[next(i for i, t in enumerate(texts)
                                    if p in t.lower())]) for p in phrases}
 
@@ -984,7 +1751,7 @@ def test_anticoagulation_trio_shares_a_galaxy():
 
     df = data_generator.build_frame(rows=100, seed=42)
     texts = df["Case_Summary"].tolist()
-    labels, _ = engine.cluster(engine.embed(texts), k=5)
+    labels, _, _ = engine.cluster(engine.embed(texts), k=5)
 
     phrases = [
         "blood thinner mistake",

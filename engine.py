@@ -345,17 +345,228 @@ def denoise(matrix: np.ndarray, dims: int = CLUSTER_DIMS, seed: int = 42) -> np.
     return reduced / norms
 
 
-def cluster(matrix: np.ndarray, k: int, seed: int = 42) -> tuple[np.ndarray, float]:
+def _matched_links(texts: list[str]) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    """Recorded must-/cannot-link pairs, translated onto row indices for this run.
+
+    Matching is by feedback.case_key, not by row position, so a link recorded
+    against last quarter's export still binds after re-ordering, re-filtering
+    or adding new rows. Silent-empty when there is no store, mirroring the
+    other feedback readers in this module (apply_human_names, apply_house_taxonomy).
+    """
+    try:
+        import feedback
+    except ImportError:  # pragma: no cover - optional component
+        return [], []
+    if not feedback.DB_PATH.exists():
+        return [], []
+
+    conn = feedback.connect()
+    try:
+        rows = conn.execute("SELECT case_a, case_b, kind FROM links").fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return [], []
+
+    # First occurrence wins on a duplicated narrative — an arbitrary but
+    # deterministic choice, and duplicated narratives are already an edge
+    # case nothing else in the pipeline handles specially.
+    index_of: dict[str, int] = {}
+    for i, t in enumerate(texts):
+        index_of.setdefault(feedback.case_key(t), i)
+
+    must, cannot = [], []
+    for r in rows:
+        ia, ib = index_of.get(r["case_a"]), index_of.get(r["case_b"])
+        if ia is None or ib is None or ia == ib:
+            continue  # one or both cases are not in this run's data
+        (must if r["kind"] == "same" else cannot).append((ia, ib))
+    return must, cannot
+
+
+def _components(n: int, must_pairs: list[tuple[int, int]]) -> list[list[int]]:
+    """Union-find over must-link pairs: every pair that must stay together is
+    collapsed into one unit before clustering, so it never can split."""
+    parent = list(range(n))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a, b in must_pairs:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    groups: dict[int, list[int]] = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    return list(groups.values())
+
+
+def _assign_constrained(
+    comp_points: np.ndarray, centroids: np.ndarray, comp_cannot: dict[int, set[int]],
+) -> tuple[np.ndarray, list[int]]:
+    """One COP-KMeans assignment pass: each unit goes to its nearest centroid
+    that does not put it in the same group as a cannot-link partner already
+    placed there this pass.
+
+    Units closest to a centroid are placed first — the confident cases get
+    their pick, so the flexibility that is left is spent on the contested
+    ones. When a unit has no legal cluster left (its cannot-link partners
+    already occupy every group, which happens when a cannot-link clique is
+    larger than k) it is placed at its nearest centroid anyway and recorded
+    as a violation, rather than raising and aborting the whole run.
+    """
+    n_comp = len(comp_points)
+    eff_k = len(centroids)
+    all_dists = np.linalg.norm(comp_points[:, None, :] - centroids[None, :, :], axis=2)
+    order = np.argsort(all_dists.min(axis=1))
+
+    assignment = np.full(n_comp, -1, dtype=int)
+    violated: list[int] = []
+    for ci in order:
+        dists = all_dists[ci]
+        forbidden = {assignment[cj] for cj in comp_cannot.get(ci, ())
+                     if assignment[cj] != -1}
+        candidates = [c for c in range(eff_k) if c not in forbidden]
+        if candidates:
+            best = min(candidates, key=lambda c: dists[c])
+        else:
+            best = int(np.argmin(dists))
+            violated.append(ci)
+        assignment[ci] = best
+    return assignment, violated
+
+
+CONSTRAINED_MAX_ITER = 15  # converges in a handful of passes on corpora this size
+
+
+def constrained_cluster(
+    matrix: np.ndarray,
+    k: int,
+    seed: int,
+    must_pairs: list[tuple[int, int]],
+    cannot_pairs: list[tuple[int, int]],
+) -> tuple[np.ndarray, dict]:
+    """KMeans constrained by recorded must-/cannot-link judgements (COP-KMeans).
+
+    Must-link pairs are merged into single units first, so they are honoured
+    by construction and can never be reported as violated. Cannot-link is
+    enforced during assignment, unit by unit; where it cannot be — a
+    cannot-link edge that falls inside a must-link unit, or a cannot-link
+    clique bigger than k — the offending edge is dropped or the placement is
+    recorded as a violation, and both are counted in the returned report
+    rather than hidden.
+    """
     space = denoise(matrix, seed=seed)
-    km = KMeans(n_clusters=k, n_init=25, random_state=seed)
-    labels = km.fit_predict(space)
+    n = len(space)
+    components = _components(n, must_pairs)
+    comp_of = np.empty(n, dtype=int)
+    for cid, members in enumerate(components):
+        comp_of[members] = cid
+
+    comp_points = np.stack([space[m].mean(axis=0) for m in components])
+    comp_weight = np.array([len(m) for m in components], dtype=float)
+
+    comp_cannot: dict[int, set[int]] = {c: set() for c in range(len(components))}
+    contradictory = 0
+    for a, b in cannot_pairs:
+        ca, cb = int(comp_of[a]), int(comp_of[b])
+        if ca == cb:
+            # a and b are must-linked AND cannot-linked — no k-way partition
+            # can satisfy both. The must-link wins (it was recorded, and
+            # splitting the unit would violate it too); the cannot-link is
+            # dropped and counted, not silently kept.
+            contradictory += 1
+            continue
+        comp_cannot[ca].add(cb)
+        comp_cannot[cb].add(ca)
+
+    n_comp = len(components)
+    eff_k = min(k, n_comp)
+    if eff_k < k:
+        print(f"      note        : {n_comp} must-linked unit(s), fewer than "
+              f"k={k}; clustering into {eff_k} instead")
+
+    km = KMeans(n_clusters=eff_k, n_init=25, random_state=seed)
+    km.fit(comp_points, sample_weight=comp_weight)
+    centroids = km.cluster_centers_
+    assignment = km.labels_.copy()
+    violated: list[int] = []
+
+    for _ in range(CONSTRAINED_MAX_ITER):
+        new_assignment, violated = _assign_constrained(comp_points, centroids, comp_cannot)
+        centroids = np.stack([
+            comp_points[new_assignment == c].mean(axis=0)
+            if (new_assignment == c).any() else centroids[c]
+            for c in range(eff_k)
+        ])
+        converged = np.array_equal(new_assignment, assignment)
+        assignment = new_assignment
+        if converged:
+            break
+
+    labels = np.empty(n, dtype=int)
+    for cid, members in enumerate(components):
+        labels[members] = assignment[cid]
+
+    cannot_honoured = sum(1 for a, b in cannot_pairs if labels[a] != labels[b])
+    report = {
+        "must_link": {"recorded": len(must_pairs), "honoured": len(must_pairs)},
+        "cannot_link": {
+            "recorded": len(cannot_pairs),
+            "honoured": cannot_honoured,
+            "violated": len(cannot_pairs) - cannot_honoured - contradictory,
+            "contradictory": contradictory,
+        },
+    }
+    return labels, report
+
+
+def cluster(
+    matrix: np.ndarray, k: int, seed: int = 42, texts: list[str] | None = None,
+) -> tuple[np.ndarray, float, dict | None]:
+    """Plain KMeans, unless recorded links bind this run's cases.
+
+    `texts` is optional and only used to look up recorded must-/cannot-link
+    judgements; when it is None, or no store exists, or nothing recorded
+    matches this run's cases, this is byte-for-byte the same KMeans call as
+    before links existed — the default path is never affected by a feature
+    nobody has used yet.
+    """
+    space = denoise(matrix, seed=seed)
+    must, cannot = _matched_links(texts) if texts is not None else ([], [])
+
+    if not must and not cannot:
+        km = KMeans(n_clusters=k, n_init=25, random_state=seed)
+        labels = km.fit_predict(space)
+        score = float(silhouette_score(space, labels)) if len(set(labels)) > 1 else 0.0
+        sizes = np.bincount(labels, minlength=k).tolist()
+        print(
+            f"[3/5] cluster     : k={k}  sizes={sizes}  "
+            f"silhouette={score:.3f} (in {space.shape[1]}-d denoised space)"
+        )
+        return labels, score, None
+
+    labels, report = constrained_cluster(matrix, k, seed, must, cannot)
     score = float(silhouette_score(space, labels)) if len(set(labels)) > 1 else 0.0
     sizes = np.bincount(labels, minlength=k).tolist()
+    ml, cl = report["must_link"], report["cannot_link"]
     print(
         f"[3/5] cluster     : k={k}  sizes={sizes}  "
-        f"silhouette={score:.3f} (in {space.shape[1]}-d denoised space)"
+        f"silhouette={score:.3f} (in {space.shape[1]}-d denoised space, constrained)"
     )
-    return labels, score
+    note = f"must-link {ml['honoured']}/{ml['recorded']} honoured"
+    note += f", cannot-link {cl['honoured']}/{cl['recorded']} honoured"
+    if cl["violated"]:
+        note += f", {cl['violated']} violated (clique exceeds k)"
+    if cl["contradictory"]:
+        note += f", {cl['contradictory']} dropped as contradictory"
+    print(f"      constraints : {note}")
+    return labels, score, report
 
 
 # A term has to appear in at least this share of a cluster's cases before it is
@@ -713,6 +924,46 @@ def record_run(source, k, texts, labels, clusters, qc, why) -> None:
         conn.close()
 
 
+def recorded_best_k() -> dict | None:
+    """Which k the run log says has held up best, or None if it can't yet say.
+
+    Reads feedback.best_k, which needs at least two distinct k values with
+    recorded stability before it will rank anything — so a fresh store, or one
+    that has only ever been run at a single k, correctly yields None rather
+    than a guess dressed up as evidence.
+    """
+    try:
+        import feedback
+    except ImportError:  # pragma: no cover - optional component
+        return None
+    if not feedback.DB_PATH.exists():
+        return None
+
+    conn = feedback.connect()
+    try:
+        return feedback.best_k(conn)
+    finally:
+        conn.close()
+
+
+def confidence_levels() -> dict:
+    """The three named confidence levels and their measured trade-off, for the
+    page to render — never for it to decide anything with. feedback.py is the
+    one place the thresholds and the holdout figures are defined; this only
+    copies them into the payload so app/index.html has no numbers of its own
+    to fall out of step.
+    """
+    try:
+        import feedback
+    except ImportError:  # pragma: no cover - optional component
+        return {}
+    return {
+        "levels": feedback.CONFIDENCE_LEVELS,
+        "tradeoff": feedback.CONFIDENCE_LEVEL_TRADEOFF,
+        "default": "preparing",
+    }
+
+
 def apply_house_taxonomy(clusters, labels, matrix, texts=None) -> list[dict]:
     """Classify every case against labels a human taught the store earlier.
 
@@ -721,7 +972,8 @@ def apply_house_taxonomy(clusters, labels, matrix, texts=None) -> list[dict]:
     which is how the tool converges on the hospital's own vocabulary instead of
     TF-IDF's, without anything generative involved.
     """
-    blank = [{"label": None, "confidence": None, "margin": None}
+    blank = [{"label": None, "confidence": None, "margin": None,
+              "candidate_label": None, "withheld_at_default": None}
              for _ in range(len(labels))]
     try:
         import feedback
@@ -744,7 +996,9 @@ def apply_house_taxonomy(clusters, labels, matrix, texts=None) -> list[dict]:
                 name = filed.get(feedback.case_key(text))
                 if name:
                     predictions[i] = {"label": name, "confidence": 1.0,
-                                      "margin": None, "source": "human"}
+                                      "margin": None, "source": "human",
+                                      "candidate_label": name,
+                                      "withheld_at_default": False}
             n_filed = sum(1 for p_ in predictions if p_.get("source") == "human")
             if n_filed:
                 print(f"      note        : {n_filed} case(s) filed by hand")
@@ -772,6 +1026,27 @@ def apply_house_taxonomy(clusters, labels, matrix, texts=None) -> list[dict]:
     if named:
         print(f"      note        : {named} group(s) named from the house taxonomy")
     return predictions
+
+
+# A carried-over name (feedback.CARRY_OVER_MIN <= similarity < 1.0) is still
+# permitted, but similarity alone does not say how much of the group actually
+# survived. Measured on the shipped corpus by resampling 5-35% of cases out and
+# re-clustering, then matching each new group to its nearest old one by centroid
+# and recording the real case-membership overlap (Jaccard) alongside that match's
+# similarity, 40 trials:
+#
+#   similarity band     mean membership overlap    n
+#   [0.92, 0.94)         0.483                      27
+#   [0.94, 0.96)         0.557                      43
+#   [0.96, 0.98)         0.666                      45
+#   [0.98, 1.00)         0.836                      21
+#
+# (correlation between similarity and overlap: 0.92). Below 0.96 less than
+# half the group's membership typically survived even though the name was
+# carried; at or above it, most of it did. 0.96 is where a carried name stops
+# meaning "the same group, reshaped" and starts meaning "a different group
+# that happens to be nearby" — so that is where drift is flagged as material.
+DRIFT_MATERIAL_MAX = 0.96
 
 
 def apply_human_names(clusters, texts, labels, matrix) -> int:
@@ -803,6 +1078,7 @@ def apply_human_names(clusters, texts, labels, matrix) -> int:
         conn.close()
 
     applied = 0
+    drifted = 0
     for c, r in zip(clusters, restored):
         if not r["name"]:
             continue
@@ -810,10 +1086,24 @@ def apply_human_names(clusters, texts, labels, matrix) -> int:
         c["label_source"] = "human" if r["match"] == "exact" else "human_carried"
         c["label_match"] = r["match"]
         c["label_similarity"] = r["similarity"]
+        # A carried-over name whose match is weaker than the band where most
+        # of a group's membership typically survives — see DRIFT_MATERIAL_MAX.
+        # Exact matches (the identical group re-formed) are never flagged.
+        c["label_drift"] = bool(
+            r["match"] == "carried_over"
+            and r["similarity"] is not None
+            and r["similarity"] < DRIFT_MATERIAL_MAX
+        )
         applied += 1
+        if c["label_drift"]:
+            drifted += 1
 
     if applied:
         print(f"      note        : {applied} group name(s) restored from feedback.db")
+    if drifted:
+        print(f"      note        : {drifted} carried name(s) show material drift "
+              f"(similarity below {DRIFT_MATERIAL_MAX}) — the group has likely "
+              f"changed enough that the old name is worth revisiting")
     return applied
 
 
@@ -834,6 +1124,8 @@ def build_payload(
     variance: float | None = None,
     true_coords: np.ndarray | None = None,
     neighbours: list[list[dict]] | None = None,
+    best_k: dict | None = None,
+    constraints: dict | None = None,
 ) -> dict:
     """Assemble the JSON the canvas renders.
 
@@ -867,10 +1159,25 @@ def build_payload(
                 "date": "" if pd.isna(date) else pd.Timestamp(date).strftime("%Y-%m-%d"),
                 "summary": str(row["Case_Summary"]),
                 "nearest": (neighbours[i] if neighbours else []),
-                # What the hospital's own taxonomy makes of this case, or null
-                # where the tool is not entitled to an opinion yet.
+                # What the hospital's own taxonomy makes of this case at the
+                # recorded ("preparing") standard, or null where the tool is
+                # not entitled to an opinion yet. This is the stored answer —
+                # a chosen confidence level never changes it, only how the
+                # interface presents it (see house_candidate below).
                 "house": (house[i]["label"] if house and house[i]["label"] else None),
                 "house_confidence": (house[i]["confidence"] if house else None),
+                "house_margin": (house[i].get("margin") if house else None),
+                # The classifier's best-scoring label regardless of whether it
+                # cleared the recorded standard, plus whether it did not — what
+                # a looser confidence level re-gates on at render time, without
+                # ever re-classifying the case. None for a hand-filed case:
+                # there is no candidate to reconsider, only a person's answer.
+                "house_candidate": (house[i].get("candidate_label")
+                                    if house and house[i].get("source") != "human"
+                                    else None),
+                "house_withheld": (house[i].get("withheld_at_default")
+                                   if house and house[i].get("source") != "human"
+                                   else None),
                 # "human" where a person filed it, otherwise the classifier's.
                 "house_source": (house[i].get("source", "taxonomy")
                                  if house and house[i]["label"] else None),
@@ -912,6 +1219,28 @@ def build_payload(
             ),
             "generated": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M"),
             "qc": qc or {},
+            # The three named confidence levels and their measured trade-off
+            # (feedback.CONFIDENCE_LEVELS / CONFIDENCE_LEVEL_TRADEOFF), shipped
+            # in the payload so the page never hardcodes a threshold that could
+            # drift out of step with feedback.py. Choosing a level re-gates
+            # house_candidate at render time only — it is never sent back, and
+            # it never changes house/house_confidence/qc, which is why it can
+            # live in meta rather than in anything recorded.
+            "confidence": confidence_levels(),
+            # Which k the run log says has held up best across runs, ranked on
+            # stability then agreement — None until there is enough history
+            # (feedback.best_k needs >=2 distinct k values recorded).
+            "best_k": best_k,
+            # How many recorded must-/cannot-link judgements bound this run, and
+            # what could not be honoured (contradictions, cliques bigger than k).
+            # None means no links were recorded for this run's cases — not that
+            # the check failed.
+            "constraints": constraints,
+            # Carried-over group names whose match similarity is materially
+            # weaker than DRIFT_MATERIAL_MAX (engine.py) — see that constant for
+            # the measurement behind the threshold. Each such cluster also
+            # carries "label_drift": true individually.
+            "name_drift": sum(1 for c in clusters if c.get("label_drift")),
         },
         "departments": departments,
         "clusters": clusters,
@@ -973,7 +1302,7 @@ def run(
         k = max(2, len(df) // 4)
 
     matrix = embed(texts)
-    labels, silhouette = cluster(matrix, k=k, seed=seed)
+    labels, silhouette, constraints = cluster(matrix, k=k, seed=seed, texts=texts)
     clusters = name_clusters(texts, labels, k, matrix)
     for c, m in zip(clusters, cluster_metrics(matrix, labels, k)):
         c.update(m)
@@ -1034,6 +1363,8 @@ def run(
         house=house,
         qc=qc,
         why=why,
+        best_k=recorded_best_k(),
+        constraints=constraints,
     )
 
     APP_DIR.mkdir(parents=True, exist_ok=True)

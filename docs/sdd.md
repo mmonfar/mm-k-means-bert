@@ -4,8 +4,8 @@
 **Design document:** [`../SPECIFICATION.md`](../SPECIFICATION.md) — the *why* and *how*.
 This file is the *what is done, what is next, and what counts as done*.
 
-**Overall completion: 92%** · **Active phase:** Phase 6 — trust & refinement
-**Last audited:** 2026-08-28 · **Tests:** 65 passing
+**Overall completion: 90%** (28 of 31 acceptance criteria across Phases 1–7 met) · **Active phase:** Phase 6 — trust & refinement
+**Last audited:** 2026-08-29 · **Tests:** 84 passing
 
 ---
 
@@ -53,16 +53,23 @@ acceptance criteria met, not a feeling.
 | Human names survive re-runs | Done | exact by fingerprint, fuzzy by centroid ≥0.92 | `test_a_name_carries_to_a_shifted_group_and_says_so` |
 | Taxonomy classifies unseen cases | Done | 78% correct on a 30-case holdout, declines when unsure | `test_a_learned_label_classifies_a_case_it_has_never_seen` |
 | Per-case filing overrides prediction | Done | a hand-filed case is never overruled | `filed_cases` in `engine.apply_house_taxonomy` |
+| Surface `best_k` in the UI | Done | Method panel shows which k has held up best, read from the run log via `engine.recorded_best_k()` → payload `meta.best_k`; says "not enough run history yet" rather than inventing a k when `feedback.best_k` returns `None` | `test_engine_recorded_best_k_reads_the_run_log`, `test_payload_carries_best_k_or_none`, `test_method_panel_surfaces_the_best_performing_k_from_the_run_log` |
+| Bulk-file from a filtered view | Done | new `PATCH /api/cases` route files every visible case under one label in a single action, reusing the single-case filing semantics so a bulk-filed case is a human filing and is never overruled by prediction; empty selection rejected | `test_bulk_filing_files_every_visible_case_under_one_label` |
+| Stability ≥ 0.60 at the default k | Done (fallback branch) | **The bar is not reached.** The criterion was "either reach it, or state in the UI that it is not reached," and it closes on the second branch: the UI states the position from the measured payload value against a `STABILITY_BAR` constant, no hardcoded figure. Stability remains 0.57 against a 0.60 bar; the number has not moved | `test_method_panel_states_plainly_that_the_stability_bar_is_not_met`, `test_method_panel_states_plainly_when_the_stability_bar_is_met` |
+| `must-link` / `cannot-link` honoured | Done | `engine.cluster()` now takes `texts` and detours into a lite in-module COP-KMeans path when recorded links match this run's cases; must-link is honoured by construction via union-find, cannot-link is enforced during assignment; unsatisfiable sets degrade with a report rather than crashing (contradictory and violated counted and printed, surfaced in payload `meta.constraints`); with no recorded links the clustering is byte-identical to before | `test_no_recorded_links_leaves_clustering_unchanged`, `test_a_must_link_pair_lands_in_the_same_group`, `test_a_cannot_link_pair_is_split_apart`, `test_unsatisfiable_constraints_are_reported_not_crashed`, `test_a_cannot_link_clique_bigger_than_k_degrades_without_crashing` |
+| Drift report | Done | carried-over human names are flagged when their group has moved materially (`engine.DRIFT_MATERIAL_MAX = 0.96`, surfaced as `clusters[i].label_drift` and payload `meta.name_drift`, plus a console line); the 0.96 threshold is measured, not invented — 40 resampling trials on the shipped corpus relating centroid similarity to real case-membership overlap (correlation 0.92), below 0.96 typically less than half the group's membership survives even though the name carries; the derivation table is recorded in `engine.py` above the constant | `test_a_carried_name_below_the_material_drift_threshold_is_flagged` |
+
+### Phase 6 — closed since last audit
+
+| Task | Status | Acceptance criterion | Pinned by |
+|---|---|---|---|
+| User-chosen confidence level | Done | three named presets (Exploring / Preparing / Acting on it) live in the rail under Failure galaxies, not behind Settings — the discoverability failure the owner reported ("I knew it was there and took me a while to understand"). The chosen level's plain-English consequence is always visible as text, not only on hover; a guess (a label the recorded 'preparing' standard would have withheld) is marked distinctly from a confident label via a dedicated `.by-guess` style, never identically. The setting persists via localStorage (wrapped in try/catch) and never enters a request body or the stored record; "Preparing" still reproduces today's exact behaviour, so the pinned 78% holdout claim is unaffected | `test_confidence_preset_renders_in_the_rail_with_plain_english_text`, `test_a_guess_is_marked_distinctly_from_a_confident_label`, `test_confidence_level_persists_and_never_reaches_the_stored_record` |
+| Replace `window.prompt` filing dialogs | Done | the single-case and bulk-file dialogs are an in-app modal that states what is in scope (the count and that it is the visible/filtered set), offers existing labels as clickable choices, states the filing-is-final consequence in plain language before commit, and offers Cancel/Escape/backdrop-click as an obvious way out; the empty-selection guard is unchanged. The rename dialog at :847 was left on `prompt()` — out of scope per the brief, which prioritised the filing dialogs | `test_filing_modal_offers_existing_labels_and_files_the_visible_set` |
+| Method panel layout | Done | First pass widened `#method-pop` to `min(560px, 100vw - 24px)` and packed two label/value pairs per row — measured wrong on the live app: the longest label ("Best-performing group count") claimed ~202px of the panel, leaving each value column ~90px, and `overflow-wrap: break-word` split ordinary words ("automatically") mid-syllable at that width, the exact defect the task was raised to fix. Corrected to one pair per row with the label column capped at `minmax(0, 180px)`, giving each value ~320px at 560px panel width (measured live, both at 1280px and down to 420px viewport) — no word breaks, no scroll. A separate defect found in the same review, the three confidence-preset buttons splitting 2-then-1 across rows on a narrow rail, is fixed by giving `.conf-seg` a fixed 3-column grid instead of `flex-wrap`, so all three always share one row (checked at 800/1000/1440px) | `test_method_panel_value_column_is_wide_enough_not_to_break_words`, `test_confidence_presets_never_split_two_and_one_across_rows` |
 
 ### Open — Phase 6
 
-| Task | Status | Acceptance criterion | Effort | Agent |
-|---|---|---|---|---|
-| Surface `best_k` in the UI | Pending | Method panel shows which k has held up best, from the run log | Medium | `coder` |
-| Bulk-file from a filtered view | Pending | file every visible case under one label in a single action | Medium | `coder` |
-| Stability ≥ 0.60 at the default k | Pending | either reach it, or state in the UI that it is not reached | High | `coder` |
-| `must-link` / `cannot-link` honoured | Pending | recorded links constrain the next clustering | High | `coder` |
-| Drift report | Pending | flag when a carried-over name's group has moved materially | Medium | `coder` |
+No open rows at last audit.
 
 ## Standing — periodic tooling review
 
@@ -113,3 +120,10 @@ Measured at k=5 on the shipped corpus:
 The grouping is clearly not random and is not reliable enough to settle a
 question alone. Every claim in the README already reflects this. Do not let it
 drift upward in tone without the numbers moving first.
+
+Closing the five Phase 6 rows above — including the constrained clustering and
+the drift report — did not move any of these numbers. `must-link`/`cannot-link`
+and drift labelling change how groups are formed and named after the fact;
+they were not re-run through `quality.py`, and nothing in this session's work
+claims to have improved neighbour agreement, stability, or the shuffled-null
+margin. The verdict stays 1 of 3.

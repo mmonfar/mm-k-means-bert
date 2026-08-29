@@ -350,6 +350,107 @@ MIN_MARGIN = 0.02
 # And it must be at least this similar at all, or the case is simply new.
 MIN_CONFIDENCE = 0.25
 
+# --------------------------------------------------------------------------------------
+# Confidence levels — one setting, presentation-time only
+# --------------------------------------------------------------------------------------
+#
+# 0.60 in quality.py and (MIN_CONFIDENCE, MIN_MARGIN) above are the same
+# judgement — "is this sure enough?" — made twice, in two files, invisible to
+# whoever is using the tool. This names it once, as three plain-English
+# choices instead of a threshold nobody outside the codebase can interpret.
+#
+# The setting changes what the app is willing to RECOMMEND acting on. It must
+# never change what the app CLAIMS about quality — quality.report() takes no
+# level, the runs table records none, and classify() below always classifies
+# at exactly (MIN_CONFIDENCE, MIN_MARGIN) regardless of what a user has
+# chosen. A level only ever re-gates that one recorded answer at render time
+# (see `gate()`), which is what stops a personal preference from making one
+# session's "correct" a different thing from another's.
+#
+# "preparing" is deliberately identical to (MIN_CONFIDENCE, MIN_MARGIN): it is
+# not a fourth number, it is a name for the one that already existed, so
+# choosing it reproduces today's classification exactly and the pinned
+# 78%-correct-on-a-30-case-holdout claim keeps its footing unchanged.
+CONFIDENCE_LEVELS = {
+    "exploring": {
+        "min_confidence": 0.10,
+        "min_margin": 0.00,
+        "title": "Exploring",
+        "blurb": ("Show me possible patterns even if they're shaky. Good for "
+                   "spotting things worth a look, not for drawing conclusions."),
+    },
+    "preparing": {
+        "min_confidence": MIN_CONFIDENCE,
+        "min_margin": MIN_MARGIN,
+        "title": "Preparing",
+        "blurb": ("I'm going to show this to colleagues. Only suggest a "
+                   "grouping when there's reasonable support for it."),
+    },
+    "acting_on_it": {
+        "min_confidence": 0.35,
+        "min_margin": 0.04,
+        "title": "Acting on it",
+        "blurb": ("Decisions will follow from this. Leave it blank rather "
+                   "than guess."),
+    },
+}
+
+# Each level's trade-off, measured — not asserted — the same way as the 78%
+# headline claim: the shipped 100-case corpus, first 70 cases (by date) teach
+# the taxonomy (the 70% of each failure mode's cases closest to its own mean,
+# at least MIN_EXAMPLES), the last 30 are held out and never trained on.
+# Reproduced exactly by test_confidence_level_tradeoff_is_measured_on_the_holdout:
+#
+#   level          answered/of   correct/answered
+#   exploring      30/30         19/30  (63%)
+#   preparing      25/30         19/25  (76%)
+#   acting_on_it   17/30         15/17  (88%)
+#
+# 30 cases is a small holdout — enough to show direction, not to pin an error
+# rate to the decimal. The interface must say so wherever these appear.
+CONFIDENCE_LEVEL_TRADEOFF = {
+    "exploring":    {"answered": 30, "of": 30, "correct": 19},
+    "preparing":    {"answered": 25, "of": 30, "correct": 19},
+    "acting_on_it": {"answered": 17, "of": 30, "correct": 15},
+}
+
+
+def gate(prediction: dict, level: str) -> dict:
+    """Re-decide whether one classify() record commits to a label, at a
+    chosen confidence level.
+
+    This never touches confidence, margin or candidate_label — those are
+    fixed the instant classify() ran, which is what keeps the measurement out
+    of the user's hands. Changing `level` can only change whether `label` is
+    shown, never what the tool measured about the case.
+
+    A hand-filed case (`source == "human"`) is a person's decision, not a
+    prediction, and is returned untouched at every level — filing is never
+    overruled by prediction, and a confidence dial is a form of prediction.
+    """
+    if level not in CONFIDENCE_LEVELS:
+        raise ValueError(f"unknown confidence level: {level!r}")
+    out = dict(prediction)
+    if prediction.get("source") == "human":
+        out["is_guess"] = False
+        return out
+
+    cfg = CONFIDENCE_LEVELS[level]
+    confidence = prediction.get("confidence")
+    margin = prediction.get("margin")
+    candidate = prediction.get("candidate_label")
+    if (candidate is not None and confidence is not None and margin is not None
+            and confidence >= cfg["min_confidence"] and margin >= cfg["min_margin"]):
+        out["label"] = candidate
+        # True only when a looser level is showing a label that "preparing"
+        # (today's default) would have withheld — a guess must be able to say
+        # it is one.
+        out["is_guess"] = bool(prediction.get("withheld_at_default"))
+    else:
+        out["label"] = None
+        out["is_guess"] = False
+    return out
+
 
 def learn(conn, label: str, vectors, author: str | None = None) -> int:
     """Fold cases into a label's running centroid. Returns the label's new count."""
@@ -422,18 +523,28 @@ def _usable_centroids(conn):
 def classify(conn, vectors) -> list[dict]:
     """Assign each case to the house taxonomy, or to nothing.
 
-    Returns one record per case: {"label", "confidence", "margin"}. `label` is
-    None whenever the tool is not entitled to an opinion — too few examples, too
-    little similarity, or two labels too close to separate. Refusing to answer is
-    a feature: a governance pack full of confident mislabels is worse than one
-    with blanks a human fills in.
+    Returns one record per case: {"label", "confidence", "margin",
+    "candidate_label", "withheld_at_default"}. `label` is None whenever the
+    tool is not entitled to an opinion at the default (MIN_CONFIDENCE,
+    MIN_MARGIN) standard — too few examples, too little similarity, or two
+    labels too close to separate. Refusing to answer is a feature: a
+    governance pack full of confident mislabels is worse than one with blanks
+    a human fills in.
+
+    `candidate_label` is the best-scoring label regardless of whether it
+    cleared that bar, and `withheld_at_default` says whether it did not — the
+    seam a looser confidence level (see `gate()`) re-gates on, without ever
+    re-running the classifier. Recording the candidate here rather than
+    discarding it is what lets a stricter preset tighten the gate freely while
+    a looser one can still recover what would otherwise be a lost answer.
     """
     import numpy as np
 
     labels, bank = _usable_centroids(conn)
     vectors = np.asarray(vectors, dtype=float)
     if bank is None or not len(vectors):
-        return [{"label": None, "confidence": None, "margin": None}
+        return [{"label": None, "confidence": None, "margin": None,
+                 "candidate_label": None, "withheld_at_default": None}
                 for _ in range(len(vectors))]
 
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
@@ -446,12 +557,15 @@ def classify(conn, vectors) -> list[dict]:
         best = float(row[order[0]])
         runner = float(row[order[1]]) if len(order) > 1 else -1.0
         margin = best - runner
-        if best < MIN_CONFIDENCE or margin < MIN_MARGIN:
-            out.append({"label": None, "confidence": round(best, 4),
-                        "margin": round(margin, 4)})
-        else:
-            out.append({"label": labels[order[0]], "confidence": round(best, 4),
-                        "margin": round(margin, 4)})
+        candidate = labels[order[0]]
+        withheld = bool(best < MIN_CONFIDENCE or margin < MIN_MARGIN)
+        out.append({
+            "label": None if withheld else candidate,
+            "confidence": round(best, 4),
+            "margin": round(margin, 4),
+            "candidate_label": candidate,
+            "withheld_at_default": withheld,
+        })
     return out
 
 

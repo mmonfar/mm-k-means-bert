@@ -431,6 +431,24 @@ body {
     color: var(--cream);
 }
 
+/* Three named presets, not two. flex-wrap on a narrow rail let "Acting on
+   it" (the longest label) drop to its own second row while the other two
+   stayed on the first — two-then-one reads as broken, not responsive. Fixed
+   to a 3-column grid instead: all three ALWAYS share one row of buttons: a
+   long label wraps onto a second line inside its own cell rather than
+   pushing a sibling button off the row. */
+.conf-seg {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.conf-seg .seg-btn {
+    white-space: normal;
+    line-height: 1.25;
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
 /* ---- search ------------------------------------------------------------- */
 
 .search {
@@ -1076,6 +1094,122 @@ dl.meta dd {
     line-height: 1.6;
 }
 
+/* ---- filing modal ----
+   Replaces window.prompt for filing decisions: a bare OS dialog gives no
+   options and no sense of what happens next. Centred like the busy overlay
+   because filing is a decision, not a passive popover — it deserves the
+   reader's full attention for the two seconds it takes to make the choice. */
+
+.modal {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: grid;
+    place-items: center;
+    padding: var(--pad);
+    background: rgba(30, 42, 50, 0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.modal[hidden] {
+    display: none;
+}
+
+.modal-card {
+    width: min(420px, 100%);
+    max-height: min(80vh, 560px);
+    overflow: auto;
+    padding: var(--pad);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: rgba(30, 42, 50, 0.98);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    display: grid;
+    gap: 10px;
+}
+
+.modal-card h2 {
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--ink);
+}
+
+.modal-scope {
+    margin: 0;
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    color: var(--ink-60);
+}
+
+/* The line that says the app will not overrule this later — the fact that
+   made the old bulk-file prompt feel like a trap, stated up front instead. */
+.modal-consequence {
+    margin: 0;
+    padding: 8px 10px;
+    border-left: 2px solid var(--teal-40);
+    background: var(--well);
+    border-radius: 0 7px 7px 0;
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    color: var(--ink-60);
+}
+
+.filing-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.filing-opt {
+    font: inherit;
+    font-size: var(--fs-small);
+    padding: 6px 11px;
+    border: 1px solid var(--rule);
+    border-radius: 999px;
+    background: var(--well);
+    color: var(--ink-60);
+    cursor: pointer;
+    transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.filing-opt:hover {
+    color: var(--ink);
+    border-color: var(--teal-40);
+}
+
+.filing-opt.is-on {
+    color: var(--cream);
+    border-color: var(--teal);
+    background: var(--teal-16);
+}
+
+.filing-new input {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    background: var(--well);
+    color: var(--ink);
+    font-family: var(--fw), system-ui, sans-serif;
+    font-size: var(--fs-small);
+}
+
+.filing-new input:focus {
+    outline: none;
+    border-color: var(--teal-40);
+}
+
+.modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
 /* ---- boot --------------------------------------------------------------- */
 
 #boot {
@@ -1427,8 +1561,14 @@ dl.meta dd {
     display: none;
 }
 
+/* The Method panel outgrew 340px once it started carrying best_k, the
+   stability sentence, constraints and drift on top of the original
+   provenance list — narrow enough that "Best-performing group count" and
+   the QC prose wrapped mid-phrase and forced a scrollbar for what is meant
+   to be a quick read. Widened to give the prose room to breathe; still
+   clamped to the viewport so it cannot overflow a small window. */
 .pop-wide {
-    width: min(340px, calc(100vw - 24px));
+    width: min(560px, calc(100vw - 24px));
 }
 
 .pop h2 {
@@ -1441,11 +1581,22 @@ dl.meta dd {
     color: var(--ink-38);
 }
 
+/* One label/value pair per row — two pairs per row was tried and measured
+   wrong: the label column sizes to its longest occupant ("Best-performing
+   group count"), which ate ~202px of the panel's 560px and left ~90px for
+   each value column. At 90px, ordinary words like "automatically" no longer
+   fit on one line and overflow-wrap: break-word split them mid-syllable —
+   the exact defect the task was raised to fix, just moved rather than
+   solved. A single column, with the label capped rather than left at
+   max-content, gives the value the width it actually needs (~300px+ at
+   560px panel width) and a long label wraps onto its own second line
+   instead of dictating every row's layout. */
 dl.method {
     margin: 0;
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 5px 14px;
+    grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+    gap: 7px 14px;
+    align-items: baseline;
 }
 
 dl.method dt {
@@ -1460,7 +1611,44 @@ dl.method dd {
     margin: 0;
     font-family: var(--fm), monospace;
     font-size: var(--fs-small);
-    word-break: break-word;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+}
+
+/* ---- confidence level ----------------------------------------------------
+   Was a hover-only control under Settings — "I knew it was there and took me
+   a while to understand" is the finding this fixes. It sits with the
+   galaxies it governs, and the consequence of whatever is selected is set as
+   plain text below the segmented control, never only in a tooltip. */
+
+.conf-block {
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+    display: grid;
+    gap: 7px;
+}
+
+.conf-block-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--fm), monospace;
+    font-size: var(--fs-micro);
+    letter-spacing: var(--track-mono-ui);
+    text-transform: uppercase;
+    color: var(--ink-38);
+}
+
+.conf-title {
+    flex: 1;
+}
+
+.conf-blurb {
+    margin: 0;
+    font-size: var(--fs-small);
+    line-height: 1.5;
+    color: var(--ink-60);
 }
 
 /* ---- recluster ---------------------------------------------------------- */
@@ -1730,6 +1918,19 @@ dl.method dd {
 .filing-value.unfiled {
     color: var(--ink-38);
     font-weight: 500;
+}
+
+/* A guess is what "Exploring" shows below the standard the app otherwise
+   recommends acting on — it must never read the same as a confident
+   suggestion (.by-machine), or the confidence level would be lying about
+   what it is doing. Dashed underline plus an amber cast, not italic-grey,
+   so the two are not mistakable at a glance. */
+.filing-value.by-guess {
+    color: var(--amber, #B8860B);
+    font-weight: 500;
+    font-style: italic;
+    text-decoration: underline dashed;
+    text-underline-offset: 3px;
 }
 
 .filing .link {

@@ -36,6 +36,8 @@
                     aria-controls="upload-pop" title="Load a case register">&#8613;</button>
                 <button type="button" class="icon-btn" id="export"
                     title="Export the visible cases as CSV">&#8615;</button>
+                <button type="button" class="icon-btn" id="bulk-file"
+                    title="File every visible case under one label">&#128193;</button>
                 <button type="button" class="icon-btn" id="settings-btn" aria-expanded="false"
                     aria-controls="settings-pop" title="View settings">&#9881;</button>
                 <button type="button" class="icon-btn" id="railToggle" aria-expanded="true"
@@ -73,6 +75,8 @@
                 <dd id="m-var">—</dd>
                 <dt>Where it ran</dt>
                 <dd id="m-model">—</dd>
+                <dt>Best-performing group count</dt>
+                <dd id="m-bestk">—</dd>
             </dl>
             <p class="caveat-body" id="m-qc"></p>
             <p class="caveat-body" id="m-note"></p>
@@ -113,6 +117,23 @@
                             <button type="button" class="link" id="gal-all">show all</button>
                         </div>
                         <div class="chans" id="legend-items"></div>
+
+                        <!-- Was under Settings — discoverable to nobody who had not
+                             already gone looking for it. This is the one control that
+                             changes whether a case gets a label at all, so it sits
+                             where the labels themselves are, with the consequence of
+                             the current choice always on screen rather than behind a
+                             hover. -->
+                        <div class="conf-block">
+                            <div class="conf-block-head">
+                                <span class="conf-title">How sure should the app be?</span>
+                                <span class="info" tabindex="0" role="note" id="conf-info"
+                                    data-tip="">i</span>
+                            </div>
+                            <div class="seg conf-seg" role="radiogroup" id="conf-seg"
+                                aria-label="Confidence level"></div>
+                            <p class="conf-blurb" id="conf-blurb"></p>
+                        </div>
 
                         <div class="recluster">
                             <span class="recluster-label">Groups</span>
@@ -286,6 +307,32 @@
         </div>
     </div>
 
+    <!-- Replaces window.prompt for filing decisions. A bare OS dialog answers
+         none of "what am I about to do, what are my options, how do I get
+         out" — this states the scope, offers existing labels as clickable
+         choices instead of asking them to be recalled from memory, and says
+         the consequence in plain language before the person commits, because
+         it is true: feedback.label_case marks a filing as human-authored and
+         engine.apply_house_taxonomy never lets a later run overrule it. -->
+    <div class="modal" id="filing-modal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="filing-modal-title">
+            <h2 id="filing-modal-title">File case</h2>
+            <p class="modal-scope" id="filing-modal-scope"></p>
+            <p class="modal-consequence" id="filing-modal-consequence"></p>
+            <div class="filing-options" id="filing-modal-options"></div>
+            <div class="filing-new">
+                <input type="text" id="filing-modal-input"
+                    placeholder="Or type a new failure mode…" autocomplete="off"
+                    aria-label="Failure mode label">
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="link" id="filing-modal-cancel">Cancel</button>
+                <button type="button" class="btn primary" id="filing-modal-confirm"
+                    disabled>File</button>
+            </div>
+        </div>
+    </div>
+
     <div id="boot">
         <div class="lockup">
             <div class="mark"><span class="mask"><span>mmonfar</span></span><span
@@ -368,6 +415,62 @@
         const points = data.points;
         const clusters = data.clusters;
         const n = points.length;
+
+        /* ---------------- Confidence level ----------------
+           One setting: how sure the app must be before it commits to
+           something. It governs two things and nothing else — the wording of
+           the quality position below, and whether a case gets a classifier
+           label or is left blank. It never changes what the measurement IS:
+           the thresholds and their measured trade-off come from the payload
+           (engine.confidence_levels() -> feedback.CONFIDENCE_LEVELS), and
+           choosing a level re-reads house_candidate/house_confidence/
+           house_margin already sitting on each case — nothing is re-run, and
+           nothing is sent anywhere. A hand-filed case (house_source ===
+           'human') is a person's answer and is shown unchanged at every
+           level, same as engine.apply_house_taxonomy enforces server-side. */
+
+        const CONF = (data.meta && data.meta.confidence) || {};
+        const CONF_LEVELS = CONF.levels || {
+            preparing: { min_confidence: 0.25, min_margin: 0.02, title: 'Preparing', blurb: '' },
+        };
+        const CONF_DEFAULT = CONF.default && CONF_LEVELS[CONF.default] ? CONF.default : 'preparing';
+        const CONF_ORDER = ['exploring', 'preparing', 'acting_on_it']
+            .filter(k => CONF_LEVELS[k]);
+
+        function loadStoredLevel() {
+            try {
+                const v = localStorage.getItem('mm-confidence-level');
+                return (v && CONF_LEVELS[v]) ? v : CONF_DEFAULT;
+            } catch (e) {
+                return CONF_DEFAULT; // storage blocked or unavailable — render correctly anyway
+            }
+        }
+        function storeLevel(level) {
+            try { localStorage.setItem('mm-confidence-level', level); }
+            catch (e) { /* private browsing / disabled storage: setting just won't persist */ }
+        }
+        let confidenceLevel = loadStoredLevel();
+
+        // Re-decide whether ONE case shows a house label at the chosen level.
+        // Mirrors feedback.gate() exactly, but reads numbers the server already
+        // computed rather than touching the classifier — the JS equivalent of
+        // "presentation-time only". A guess (isGuess true) is a label that
+        // 'preparing' — today's recorded standard — would have withheld.
+        function effectiveHouse(p) {
+            if (p.house_source === 'human') {
+                return { label: p.house, source: 'human', isGuess: false };
+            }
+            const cfg = CONF_LEVELS[confidenceLevel];
+            if (!cfg || p.house_candidate == null ||
+                p.house_confidence == null || p.house_margin == null) {
+                return { label: null, source: null, isGuess: false };
+            }
+            if (p.house_confidence >= cfg.min_confidence && p.house_margin >= cfg.min_margin) {
+                return { label: p.house_candidate, source: 'taxonomy',
+                         isGuess: !!p.house_withheld };
+            }
+            return { label: null, source: null, isGuess: false };
+        }
 
         /* ---------------- Scene ---------------- */
 
@@ -554,6 +657,16 @@
         kWarn.hidden = data.meta.n_clusters === DEFAULT_K;
         document.getElementById('m-model').textContent = 'On this computer — nothing sent out';
 
+        // best_k comes from feedback.best_k(), which needs at least two
+        // distinct group counts run and recorded before it will rank one —
+        // otherwise it is a guess wearing a number, and we say so instead.
+        const bestK = data.meta.best_k;
+        document.getElementById('m-bestk').textContent = bestK
+            ? 'k=' + bestK.k + ' (' + Math.round(bestK.stability * 100) + '% stability, ' +
+              Math.round(bestK.agreement * 100) + '% agreement, over ' + bestK.runs +
+              ' run' + (bestK.runs === 1 ? '' : 's') + ')'
+            : 'Not enough run history yet — try at least two different group counts';
+
         // "Is 14% ok?" is the first question anyone senior asks, so the number
         // comes with its answer attached rather than a definition of the term.
         const detailVerdict = varPct == null ? ''
@@ -564,13 +677,32 @@
         const qc = data.meta.qc || {};
         if (qc.verdict) {
             const na = qc.neighbour_agreement || {};
+            // The bar is read from the payload, never hardcoded here, so this
+            // sentence tracks quality.py's 0.60 threshold if it ever moves.
+            const STABILITY_BAR = 0.60;
+            const stabVal = (qc.stability || {}).stability;
+            const stabPct = Math.round((stabVal || 0) * 100);
+            // The plain-English form asked for on top of the pairs-based one:
+            // computed from the same payload value, never a second figure.
+            const stabPlain = stabVal == null ? '' :
+                ' If we ran this again on slightly different data, about ' + stabPct +
+                ' out of every 100 cases would land in the same group as they did ' +
+                'this time.';
+            const stabLine = stabVal == null
+                ? 'Resampling stability could not be measured for this run.'
+                : (stabVal >= STABILITY_BAR
+                    ? 'Groups keep ' + stabPct + '% of their pairs together when the ' +
+                      'data is resampled, at or above the ' + Math.round(STABILITY_BAR * 100) +
+                      '% bar for calling that stable.' + stabPlain
+                    : 'Groups keep ' + stabPct + '% of their pairs together when the ' +
+                      'data is resampled — <b>below the ' + Math.round(STABILITY_BAR * 100) +
+                      '% bar</b>, so stability is not yet reached at this group count.' +
+                      stabPlain);
             document.getElementById('m-qc').innerHTML =
                 '<b>Is this grouping real?</b> ' +
                 Math.round((na.agreement || 0) * 100) + '% of cases have their single ' +
                 'closest case in the same group; at random it would be ' +
-                Math.round((na.chance || 0) * 100) + '%. Groups keep ' +
-                Math.round(((qc.stability || {}).stability || 0) * 100) +
-                '% of their pairs together when the data is resampled. ' +
+                Math.round((na.chance || 0) * 100) + '%. ' + stabLine + ' ' +
                 'Verdict: <b>' + qc.verdict + '</b> (' + qc.checks_passed + ' of 3 ' +
                 'checks passed).';
         }
@@ -895,6 +1027,75 @@
             geo.attributes.aSize.needsUpdate = true;
         });
 
+        /* ---------------- Confidence level control ----------------
+           Three named presets, not a slider — a slider invites nudging a
+           number until it turns green, and this setting must never look like
+           a measurement to tune. Built from the payload (CONF_LEVELS /
+           CONF.tradeoff) rather than hardcoded, so the tooltip's trade-off
+           figures always match whatever feedback.py actually measured. */
+
+        function tradeoffSentence(level) {
+            const t = CONF.tradeoff && CONF.tradeoff[level];
+            if (!t) return '';
+            const labelledIn10 = Math.round((t.answered / t.of) * 10);
+            const correctIn10 = t.answered
+                ? Math.round((t.correct / t.answered) * 10) : 0;
+            return 'On a 30-case test: labels about ' + labelledIn10 +
+                ' in 10 cases and leaves the rest blank; of the ones it labels, ' +
+                'about ' + correctIn10 + ' in 10 match what a person chose. ' +
+                '30 cases is a small test, so treat this as a direction, not a ' +
+                'precise error rate.';
+        }
+
+        const confSeg = document.getElementById('conf-seg');
+        const confBlurb = document.getElementById('conf-blurb');
+        const confInfo = document.getElementById('conf-info');
+
+        function renderConfSeg() {
+            confSeg.innerHTML = CONF_ORDER.map(key => {
+                const cfg = CONF_LEVELS[key];
+                return '<button type="button" class="seg-btn' +
+                    (key === confidenceLevel ? ' is-on' : '') + '" role="radio" ' +
+                    'aria-checked="' + (key === confidenceLevel) + '" ' +
+                    'data-level="' + key + '" ' +
+                    'data-tip="' + (cfg.blurb || '').replace(/"/g, '&quot;') + '">' +
+                    (cfg.title || key) + '</button>';
+            }).join('');
+            // wireExplainers attaches its own click listener that stops
+            // propagation (so hovering an info bubble does not close a
+            // popover) — event delegation from the container would never see
+            // the click, so each button is wired directly instead.
+            confSeg.querySelectorAll('[data-level]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    confidenceLevel = btn.dataset.level;
+                    storeLevel(confidenceLevel);
+                    applyConfidenceLevel();
+                });
+            });
+            wireExplainers(confSeg);
+
+            // Discoverability was the failure this replaces: a hover-only
+            // tooltip nobody found. The chosen level's consequence is set as
+            // plain text in the rail, always on screen; the measured
+            // trade-off (the "in 10 cases" figures) is one hover away on the
+            // info bubble for whoever wants the fuller number, not a
+            // precondition for understanding what the level does.
+            const cfg = CONF_LEVELS[confidenceLevel];
+            confBlurb.textContent = cfg ? cfg.blurb : '';
+            confInfo.dataset.tip = tradeoffSentence(confidenceLevel) ||
+                'No holdout trade-off recorded for this level yet.';
+        }
+
+        // Re-renders the case card and the legend's "known labels" wherever a
+        // level change should be visible. Never touches data, qc, or anything
+        // that would be recorded — only what is already on screen.
+        function applyConfidenceLevel() {
+            renderConfSeg();
+            if (pinned !== null) showCase(pinned);
+        }
+
+        renderConfSeg();
+
         const railEl = document.getElementById('rail');
         document.getElementById('railToggle').addEventListener('click', e => {
             railEl.hidden = !railEl.hidden;
@@ -1025,17 +1226,24 @@
             }
 
             // Where this case sits in the hospital's own taxonomy, and who put
-            // it there — a person, or the classifier guessing from past filings.
+            // it there — a person, the classifier confident enough to commit,
+            // or (at "Exploring") the classifier's best guess, marked as one.
             if (live) {
                 filing.hidden = false;
-                if (p.house) {
-                    filedAs.textContent = p.house;
+                const eh = effectiveHouse(p);
+                if (eh.label) {
+                    filedAs.textContent = eh.label + (eh.isGuess ? ' (guess)' : '');
                     filedAs.className = 'filing-value ' +
-                        (p.house_source === 'human' ? 'by-hand' : 'by-machine');
-                    filedAs.title = p.house_source === 'human'
+                        (eh.source === 'human' ? 'by-hand'
+                            : eh.isGuess ? 'by-guess' : 'by-machine');
+                    filedAs.title = eh.source === 'human'
                         ? 'Filed by a person'
-                        : 'Suggested from earlier filings (' +
-                          Math.round((p.house_confidence || 0) * 100) + '% match)';
+                        : (eh.isGuess
+                            ? "Best guess only — below the standard the app is set to " +
+                              "recommend acting on (" +
+                              Math.round((p.house_confidence || 0) * 100) + '% match)'
+                            : 'Suggested from earlier filings (' +
+                              Math.round((p.house_confidence || 0) * 100) + '% match)');
                 } else {
                     filedAs.textContent = 'not filed yet';
                     filedAs.className = 'filing-value unfiled';
@@ -1075,23 +1283,106 @@
 
         geoOnChange = () => { if (pinned !== null) showCase(pinned); };
 
+        // A star's screen position depends on the live camera projection, so
+        // there is no deterministic pixel to click headlessly. This exposes
+        // the pin path directly for the boot-style Playwright tests — no
+        // secrets, no network calls, nothing a reader on the page could not
+        // already trigger by clicking a star themselves.
+        window.__mmPin = i => { pinned = i; showCase(i); };
+
         document.getElementById('insp-close').addEventListener('click', clearCase);
 
         const caseWhy = document.getElementById('case-why');
         const filing = document.getElementById('filing');
         const filedAs = document.getElementById('filed-as');
 
+        /* ---------------- Filing modal ----------------
+           One control behind both the single-case "change" link and the
+           bulk-file button: existing labels are offered as clickable choices
+           rather than something to be recalled and retyped, the scope and
+           consequence are stated up front, and Cancel/Escape/backdrop-click
+           all back out with nothing filed. Resolves to the chosen label, or
+           null if the person backed out — the caller's empty-selection guard
+           stays exactly as it was with prompt(). */
+
+        const filingModal = document.getElementById('filing-modal');
+        const filingTitleEl = document.getElementById('filing-modal-title');
+        const filingScopeEl = document.getElementById('filing-modal-scope');
+        const filingConsequenceEl = document.getElementById('filing-modal-consequence');
+        const filingOptionsEl = document.getElementById('filing-modal-options');
+        const filingInputEl = document.getElementById('filing-modal-input');
+        const filingCancelBtn = document.getElementById('filing-modal-cancel');
+        const filingConfirmBtn = document.getElementById('filing-modal-confirm');
+        let filingResolve = null;
+
+        function closeFilingModal(result) {
+            filingModal.hidden = true;
+            const resolve = filingResolve;
+            filingResolve = null;
+            if (resolve) resolve(result === undefined ? null : result);
+        }
+
+        function markFilingOption(label) {
+            filingOptionsEl.querySelectorAll('.filing-opt').forEach(b => {
+                b.classList.toggle('is-on', b.dataset.label === label);
+            });
+        }
+
+        function openFilingModal({ title, scope, consequence, known, initial }) {
+            filingTitleEl.textContent = title;
+            filingScopeEl.textContent = scope;
+            filingConsequenceEl.textContent = consequence;
+            filingInputEl.value = initial || '';
+            filingOptionsEl.innerHTML = known.length
+                ? known.map(label => '<button type="button" class="filing-opt" ' +
+                    'data-label="' + label.replace(/"/g, '&quot;') + '">' + label +
+                    '</button>').join('')
+                : '<p class="note">No failure modes filed yet — type a new one below.</p>';
+            markFilingOption(initial || '');
+            filingConfirmBtn.disabled = !filingInputEl.value.trim();
+            filingModal.hidden = false;
+            filingInputEl.focus();
+            return new Promise(resolve => { filingResolve = resolve; });
+        }
+
+        filingOptionsEl.addEventListener('click', e => {
+            const btn = e.target.closest('.filing-opt');
+            if (!btn) return;
+            filingInputEl.value = btn.dataset.label;
+            markFilingOption(btn.dataset.label);
+            filingConfirmBtn.disabled = false;
+            filingInputEl.focus();
+        });
+        filingInputEl.addEventListener('input', () => {
+            markFilingOption(filingInputEl.value);
+            filingConfirmBtn.disabled = !filingInputEl.value.trim();
+        });
+        filingCancelBtn.addEventListener('click', () => closeFilingModal(null));
+        filingModal.addEventListener('click', e => {
+            if (e.target === filingModal) closeFilingModal(null);
+        });
+        filingConfirmBtn.addEventListener('click', () => {
+            const label = filingInputEl.value.trim();
+            if (!label) return;
+            closeFilingModal(label);
+        });
+        addEventListener('keydown', e => {
+            if (e.key === 'Escape' && !filingModal.hidden) closeFilingModal(null);
+        });
+
         document.getElementById('file-case').addEventListener('click', async () => {
             if (pinned === null) return;
             const p = points[pinned];
             const known = [...new Set(points.map(q => q.house).filter(Boolean))];
-            const hint = known.length
-                ? '\n\nAlready in use:\n  ' + known.join('\n  ')
-                : '';
-            const next = prompt('File ' + p.id + ' under which failure mode?' + hint,
-                p.house || '');
-            if (next === null) return;
-            const label = next.trim();
+            const label = await openFilingModal({
+                title: 'File ' + p.id,
+                scope: 'This one case will be filed.',
+                consequence: 'This is a decision, not a suggestion — once filed, ' +
+                    'a later run will not overrule it, even if the automatic ' +
+                    'grouping later disagrees.',
+                known,
+                initial: p.house || ''
+            });
             if (!label) return;
 
             busyMain.textContent = 'Filing ' + p.id + ' under “' + label + '”…';
@@ -1355,6 +1646,52 @@
             a.download = name;
             a.click();
             URL.revokeObjectURL(a.href);
+        });
+
+        /* ---------------- Bulk filing ----------------
+           Same route a hand-filed case uses (feedback.label_case), just aimed at
+           every case the current filters leave on screen, in one round trip.
+           A bulk-filed case is filed exactly like a single one — it cannot be
+           overruled by the classifier on a later run. */
+
+        document.getElementById('bulk-file').addEventListener('click', async () => {
+            const ids = [];
+            for (let i = 0; i < n; i++) {
+                if (visible[i]) ids.push(points[i].id);
+            }
+            if (!ids.length) {
+                alert('Nothing is visible to file — clear a filter first.');
+                return;
+            }
+
+            const known = [...new Set(points.map(q => q.house).filter(Boolean))];
+            const label = await openFilingModal({
+                title: 'File ' + ids.length + ' case' + (ids.length === 1 ? '' : 's'),
+                scope: 'Every case currently visible — ' + ids.length +
+                    ' of ' + n + ', after your filters — will be filed.',
+                consequence: 'This is a decision, not a suggestion — once filed, ' +
+                    'a later run will not overrule any of them, even if the ' +
+                    'automatic grouping later disagrees.',
+                known,
+                initial: ''
+            });
+            if (!label) return;
+
+            busyMain.textContent = 'Filing ' + ids.length + ' case(s) under “' + label + '”…';
+            busy.hidden = false;
+            try {
+                const res = await fetch('/api/cases', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cases: ids, label })
+                });
+                const out = await res.json();
+                if (!res.ok) throw new Error(out.error || ('HTTP ' + res.status));
+                location.reload();
+            } catch (err) {
+                busy.hidden = true;
+                alert('Could not file those cases: ' + (err.message || err));
+            }
         });
 
         /* ---------------- Upload ----------------

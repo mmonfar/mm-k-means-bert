@@ -235,7 +235,7 @@ class Handler(SimpleHTTPRequestHandler):
         ids will not.
         """
         route = self.path.split("?")[0]
-        if route not in ("/api/name", "/api/case"):
+        if route not in ("/api/name", "/api/case", "/api/cases"):
             self._json(404, {"error": "no such endpoint"})
             return
 
@@ -248,6 +248,10 @@ class Handler(SimpleHTTPRequestHandler):
 
         if route == "/api/case":
             self._file_case(body)
+            return
+
+        if route == "/api/cases":
+            self._file_cases(body)
             return
 
         try:
@@ -377,6 +381,65 @@ class Handler(SimpleHTTPRequestHandler):
             _pipeline_lock.release()
 
         self._json(200, {"ok": True, "label": name, "store": state})
+
+    def _file_cases(self, body: dict) -> None:
+        """File every case in a filtered view under one label, in a single action.
+
+        Same semantics as `_file_case` for each member — the point is that a
+        clinician reviewing "all severity-5 cases in ED" should be able to file
+        the lot at once rather than clicking through them one at a time. Every
+        case filed this way is a human filing exactly like the single-case
+        route, so it is never overruled by the classifier on a later run (see
+        `filed` handling in engine.apply_house_taxonomy). The pipeline rebuild
+        runs once at the end, not once per case.
+        """
+        case_ids = body.get("cases")
+        name = str(body.get("label", "")).strip()
+        if not isinstance(case_ids, list) or not case_ids:
+            self._json(400, {"error": "need a non-empty list of case ids"})
+            return
+        if not 1 <= len(name) <= 60:
+            self._json(400, {"error": "a label must be 1-60 characters"})
+            return
+
+        payload_path = APP_DIR / "data.json"
+        if not payload_path.exists():
+            self._json(400, {"error": "no galaxy built yet"})
+            return
+
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        by_id = {p["id"]: p for p in payload["points"]}
+        wanted = {str(c) for c in case_ids}
+        points = [by_id[c] for c in wanted if c in by_id]
+        if not points:
+            self._json(404, {"error": "none of the given case ids were found"})
+            return
+
+        import feedback
+
+        author = self.headers.get("X-Author") or None
+        conn = feedback.connect()
+        try:
+            for point in points:
+                feedback.label_case(conn, point["summary"], name, author=author)
+            total = feedback.learn(
+                conn, name, engine.embed([p["summary"] for p in points]), author=author)
+            state = feedback.summary(conn)
+        finally:
+            conn.close()
+
+        print(f"[mmonfar.] {len(points)} case(s) filed under {name!r} in one action "
+              f"({total} cases now under that label)")
+
+        if not _pipeline_lock.acquire(blocking=False):
+            self._json(409, {"error": "a rebuild is already running"})
+            return
+        try:
+            engine.run(self._current_input(), k=payload["meta"]["n_clusters"])
+        finally:
+            _pipeline_lock.release()
+
+        self._json(200, {"ok": True, "label": name, "filed": len(points), "store": state})
 
     def do_DELETE(self) -> None:  # noqa: N802
         """Restore the shipped demo dataset and forget the uploaded register."""
